@@ -1,0 +1,49 @@
+[workspace]
+name = "dying-light-head-tracking"
+version = "0.0.0"
+description = "Head tracking mod for Dying Light using the CameraUnlock shared library"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+update-submodule = "git submodule update --remote cameraunlock-core && powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-core/scripts/update-submodule.ps1"
+sync = "git submodule update --remote cameraunlock-core"
+
+# No -G: let CMake pick whichever Visual Studio is installed. Pinning a
+# generator broke CI once the runner image moved on.
+setup = { cmd = """
+    powershell -Command "if (-not (Test-Path 'build')) { cmake -B build -A x64 } else { Write-Host 'Build directory exists, skipping setup' -ForegroundColor Yellow }"
+""" }
+
+build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
+build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+
+# The engine-free unit tests: the view basis maths and the aim projection,
+# including the six reticle litmus tests. No game, no hooks.
+test = { cmd = "build\\Release\\dlht_tests.exe", depends-on = ["build-release"] }
+
+# Deploy to every copy of the game on this machine.
+deploy = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug", depends-on = ["build"] }
+install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build-release"] }
+uninstall = 'cmd /c scripts\uninstall.cmd'
+
+# CI runs exactly this, so there is no second copy of the build to drift.
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
+
+# Changelog, version stamp, package, commit, tag, push. Unattended:
+# `pixi run release minor` is the authorization and nothing prompts.
+release = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1" }
+
+# Bump the vendored ASI loader to the latest upstream inside its pinned range.
+# Manual; commit the result. CI does not run this.
+update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
+
+clean = { cmd = """
+    powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'bin') { Remove-Item 'bin' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+# Send a scripted pose to the mod's UDP port, for testing without a tracker.
+send-pose = { cmd = "python scripts/send-pose.py" }
+
+[dependencies]
+# None: the build uses the system CMake and Visual Studio.

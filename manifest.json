@@ -1,0 +1,7 @@
+{
+  "name": "DyingLightHeadTracking",
+  "version": "0.0.0",
+  "game": "Dying Light",
+  "game_id": "dying-light",
+  "description": "Head tracking for Dying Light using the CameraUnlock shared library"
+}
