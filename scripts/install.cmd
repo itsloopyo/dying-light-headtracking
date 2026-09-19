@@ -22,7 +22,7 @@ set "GAME_ID=dying-light"
 set "MOD_DISPLAY_NAME=Dying Light Head Tracking"
 set "MOD_DLLS=DyingLightHeadTracking.asi"
 set "MOD_INTERNAL_NAME=DyingLightHeadTracking"
-set "MOD_VERSION=0.0.0"
+set "MOD_VERSION=0.1.0"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
 :: Filename the ASI loader DLL is renamed to: the import the game exe already

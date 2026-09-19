@@ -1,6 +1,6 @@
 [workspace]
 name = "dying-light-head-tracking"
-version = "0.0.0"
+version = "0.1.0"
 description = "Head tracking mod for Dying Light using the CameraUnlock shared library"
 channels = ["conda-forge"]
 platforms = ["win-64"]
