@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include "legacy_config/legacy_config.h"
+#include "config_sanitize.h"
 #include "logging.h"
 
 #include "cameraunlock/config/ini_reader.h"
@@ -94,6 +94,36 @@ bool WriteDefaultIni(const char* path) {
     return true;
 }
 
+template <typename Sanitizer>
+float ReadSanitized(const cameraunlock::IniReader& ini, const char* section, const char* key,
+                    float fallback, Sanitizer clean) {
+    const float raw = ini.ReadFloat(section, key, fallback);
+    const float value = clean(raw);
+    if (raw != value) {
+        Log::Line("WARN: INI %s.%s value %.4f out of range or non-finite; using %.4f", section,
+                  key, static_cast<double>(raw), static_cast<double>(value));
+    }
+    return value;
+}
+
+float ReadPositionLimit(const cameraunlock::IniReader& ini, const char* key, float fallback) {
+    return ReadSanitized(ini, "Position", key, fallback,
+                         [fallback](float v) { return SanitizePositionLimit(v, fallback); });
+}
+
+// GetAsyncKeyState is defined for 0x01-0xFE; 0 is the poller's unbound sentinel.
+constexpr int kMaxVirtualKey = 0xFE;
+
+int ReadVirtualKey(const cameraunlock::IniReader& ini, const char* key, int fallback) {
+    const int vk = ini.ReadHex("Hotkeys", key, fallback);
+    if (vk < 0 || vk > kMaxVirtualKey) {
+        Log::Line("WARN: INI Hotkeys.%s value 0x%X is not a virtual-key code (0x01-0xFE, or 0 "
+                  "to unbind); using 0x%02X", key, vk, fallback);
+        return fallback;
+    }
+    return vk;
+}
+
 }  // namespace
 
 bool Config::LoadOrCreate(const char* iniPath) {
@@ -101,42 +131,62 @@ bool Config::LoadOrCreate(const char* iniPath) {
         return false;
     }
 
-    legacy::Config c;
-    const legacy::ReadResult read = c.Read(iniPath);
-    if (read.status == legacy::ReadStatus::Absent) {
+    cameraunlock::IniReader ini;
+    if (!ini.Open(iniPath)) {
         Log::Line("ERROR: Failed to open INI: %s", iniPath);
         return false;
     }
-    if (read.status == legacy::ReadStatus::Refused) {
+
+    enabled_on_startup = ini.ReadBool("General", "EnableOnStartup", kEnableOnStartup);
+    const int port = ini.ReadInt("General", "Port", kPort);
+    if (port < kMinPort || port > kMaxPort) {
+        Log::Line("ERROR: INI port %d out of range %d-%d", port, kMinPort, kMaxPort);
         return false;
     }
+    udp_port = static_cast<std::uint16_t>(port);
 
-    enabled_on_startup = c.enabled_on_startup;
-    udp_port = c.udp_port;
-    data_freshness_ms = c.data_freshness_ms;
-    world_space_yaw = c.world_space_yaw;
-    show_reticle = c.show_reticle;
-    local_smoothing = c.local_smoothing;
-    remote_smoothing = c.remote_smoothing;
-    position_enabled = c.position_enabled;
-    pos_limit_x = c.pos_limit_x;
-    pos_limit_y = c.pos_limit_y;
-    pos_limit_y_down = c.pos_limit_y_down;
-    pos_limit_z = c.pos_limit_z;
-    pos_limit_z_back = c.pos_limit_z_back;
-    verbose = c.verbose;
-    ignore_gameplay_gate = c.ignore_gameplay_gate;
-    collision_enabled = c.collision_enabled;
-    collision_radius = c.collision_radius;
-    collision_release_smoothing = c.collision_release_smoothing;
-    vk_toggle = c.vk_toggle;
-    vk_cycle_mode = c.vk_cycle_mode;
-    vk_yaw_mode = c.vk_yaw_mode;
-    vk_reticle = c.vk_reticle;
-    chord_toggle = c.chord_toggle;
-    chord_cycle_mode = c.chord_cycle_mode;
-    chord_yaw_mode = c.chord_yaw_mode;
-    chord_reticle = c.chord_reticle;
+    data_freshness_ms = ini.ReadInt("General", "DataFreshnessMs", kDataFreshnessMs);
+    if (data_freshness_ms <= 0) {
+        Log::Line("WARN: INI General.DataFreshnessMs %d is not a positive window; using %d",
+                  data_freshness_ms, kDataFreshnessMs);
+        data_freshness_ms = kDataFreshnessMs;
+    }
+    world_space_yaw = ini.ReadBool("General", "WorldSpaceYaw", kWorldSpaceYaw);
+    show_reticle = ini.ReadBool("General", "ShowReticle", kShowReticle);
+
+    local_smoothing = ReadSanitized(ini, "Smoothing", "LocalSmoothing", kLocalSmoothing,
+                                    [](float v) { return SanitizeSmoothing(v, kLocalSmoothing); });
+    remote_smoothing = ReadSanitized(ini, "Smoothing", "RemoteSmoothing", kRemoteSmoothing,
+                                     [](float v) { return SanitizeSmoothing(v, kRemoteSmoothing); });
+
+    position_enabled = ini.ReadBool("Position", "Enabled", kPositionEnabled);
+    pos_limit_x = ReadPositionLimit(ini, "LimitX", kPosLimitX);
+    pos_limit_y = ReadPositionLimit(ini, "LimitY", kPosLimitY);
+    pos_limit_y_down = ReadPositionLimit(ini, "LimitYDown", pos_limit_y);
+    pos_limit_z = ReadPositionLimit(ini, "LimitZ", kPosLimitZ);
+    pos_limit_z_back = ReadPositionLimit(ini, "LimitZBack", kPosLimitZBack);
+
+    verbose = ini.ReadBool("Diagnostics", "Verbose", kVerbose);
+    ignore_gameplay_gate = ini.ReadBool("Diagnostics", "IgnoreGameplayGate", kIgnoreGameplayGate);
+
+    collision_enabled = ini.ReadBool("Collision", "CollisionEnabled", kCollisionEnabled);
+    collision_radius = ReadSanitized(ini, "Collision", "CollisionRadius", kCollisionRadius,
+                                     [](float v) {
+                                         return ClampRange(SanitizeFinite(v, kCollisionRadius),
+                                                           kMinCollisionRadius, kMaxCollisionRadius);
+                                     });
+    collision_release_smoothing =
+        ReadSanitized(ini, "Collision", "CollisionReleaseSmoothing", kCollisionReleaseSmoothing,
+                      [](float v) { return SanitizeSmoothing(v, kCollisionReleaseSmoothing); });
+
+    vk_toggle = ReadVirtualKey(ini, "Toggle", kVkToggle);
+    vk_cycle_mode = ReadVirtualKey(ini, "CycleMode", kVkCycleMode);
+    vk_yaw_mode = ReadVirtualKey(ini, "YawMode", kVkYawMode);
+    vk_reticle = ReadVirtualKey(ini, "Reticle", kVkReticle);
+    chord_toggle = ini.ReadBool("Hotkeys", "ChordToggle", kChord);
+    chord_cycle_mode = ini.ReadBool("Hotkeys", "ChordCycleMode", kChord);
+    chord_yaw_mode = ini.ReadBool("Hotkeys", "ChordYawMode", kChord);
+    chord_reticle = ini.ReadBool("Hotkeys", "ChordReticle", kChord);
     return true;
 }
 

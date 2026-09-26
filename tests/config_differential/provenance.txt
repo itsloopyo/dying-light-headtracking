@@ -1,0 +1,37 @@
+# What the config differential test compiles, and where each file came from.
+# scripts/run-tests.ps1 fails when a listed file no longer has its hash.
+#
+# Newest published build: v0.1.0 (3da58f6), pinned to cameraunlock-core 8d18bb3. No 'dev'
+# pre-release was published. Its installer ZIP and its launcher seed shipped the same
+# DyingLightHeadTracking.ini, the only committed version of that file.
+#
+# Oracle: copies of 'git show v0.1.0:<path>' and of cameraunlock-core
+# 'git show 8d18bb3:cpp/<path>'.
+07abf199ba0a1b96bee88e23cbfd822050c95e2967f6b34d11571603a67d93b3  tests/config_differential/oracle/src/config.cpp  v0.1.0:src/config.cpp
+3c5855bea1923688e9d16357847de76f1b792b4fe13539a65219322eb49249c7  tests/config_differential/oracle/src/config.h  v0.1.0:src/config.h
+e821785478945b763760d061f08744d4f583d01de9e9f5840525828a32708bd1  tests/config_differential/oracle/src/config_sanitize.h  v0.1.0:src/config_sanitize.h
+96741cbd7c15cf8b0184172d30519e8caa32078742d00adb98f8195ea60354f5  tests/config_differential/oracle/src/hotkeys.cpp  v0.1.0:src/hotkeys.cpp
+8ccd40b7d3125d0f377945ec33d3dbf077d58853bfb5255e56e32b1809c4185a  tests/config_differential/oracle/src/hotkeys.h  v0.1.0:src/hotkeys.h
+d89198fa467a296575caf4c3f812266d1ada567c7fd004a44573fbe52cd4d20c  tests/config_differential/oracle/src/logging.h  v0.1.0:src/logging.h
+a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a  tests/config_differential/oracle/core/include/cameraunlock/config/ini_reader.h  core 8d18bb3:cpp/include/cameraunlock/config/ini_reader.h
+b24dceb8e25475aebc5a468a5c7362a4a4e64204d183d1408525345f32f547f5  tests/config_differential/oracle/core/include/cameraunlock/data/position_settings.h  core 8d18bb3:cpp/include/cameraunlock/data/position_settings.h
+de519d9b49c949353c550b9dda347380cbbf131f6768378f8a9f5fd97678fea8  tests/config_differential/oracle/core/include/cameraunlock/input/chord_hotkeys.h  core 8d18bb3:cpp/include/cameraunlock/input/chord_hotkeys.h
+43bdd2ef8554c78e5f440333463750c13b95110fe672b0b6e273244df9e7d169  tests/config_differential/oracle/core/include/cameraunlock/logging/file_log.h  core 8d18bb3:cpp/include/cameraunlock/logging/file_log.h
+d7a905270933e3cb0c4c361d29d3fd701655498cbcd1875ea79d180468bdbe6a  tests/config_differential/oracle/core/include/cameraunlock/math/angle_utils.h  core 8d18bb3:cpp/include/cameraunlock/math/angle_utils.h
+fc2146f8c585e5f610c7234e302f59de4945679cfa28ff479ca47477ec073f22  tests/config_differential/oracle/core/include/cameraunlock/math/smoothing_utils.h  core 8d18bb3:cpp/include/cameraunlock/math/smoothing_utils.h
+e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c  tests/config_differential/oracle/core/src/config/ini_reader.cpp  core 8d18bb3:cpp/src/config/ini_reader.cpp
+73c53c2baa06bbfebe8211f62678aa2b60cb95f604743d3686951ba56b87ea47  tests/config_differential/oracle/core/src/logging/file_log.cpp  core 8d18bb3:cpp/src/logging/file_log.cpp
+#
+# The file v0.1.0 shipped, and its first-run output, extracted once from the oracle.
+65c017f78942857e6ad1ce09b9eee6f033db323dc92991c99ec486668d55e5e2  tests/config_differential/data/v0.1.0-shipped.ini  v0.1.0:DyingLightHeadTracking.ini
+275668372c00049f964fd0ae6e2a345ef25028c730b296eddf08a74ebb314018  tests/config_differential/data/v0.1.0-first-run.ini  v0.1.0 first run
+#
+# The frozen import. Never edited once the conversion landed.
+e6bb0e3e60d7ca28761cc312ceca3a5ef0acdeab922c93bf35c2d4692f394124  src/legacy_config/legacy_config.h  frozen import
+61e5b865bca7b88fc9e7c9c18d2253087d917a511010f1186724db1ca7cebed1  src/legacy_config/legacy_config.cpp  frozen import
+2a4f108126cee5bb64a22d4a08a5a3aaa4f499b430186deb4900c17a174d0206  src/legacy_config/config_sanitize.h  frozen import
+#
+# The core sources the import compiles. IniReader is frozen in core, and its two files
+# equal 8d18bb3's, so the import reads a file with the helpers the published build had.
+a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a  cameraunlock-core/cpp/include/cameraunlock/config/ini_reader.h  core 8d18bb3:cpp/include/cameraunlock/config/ini_reader.h
+e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c  cameraunlock-core/cpp/src/config/ini_reader.cpp  core 8d18bb3:cpp/src/config/ini_reader.cpp

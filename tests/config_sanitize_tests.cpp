@@ -1,11 +1,11 @@
 #include "test_support.h"
 
-#include "config_sanitize.h"
+#include "legacy_config/config_sanitize.h"
 
 #include <cstdio>
 #include <limits>
 
-using namespace DyingLightHeadTracking;
+using namespace DyingLightHeadTracking::legacy;
 
 namespace {
 

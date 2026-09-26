@@ -7,13 +7,16 @@
 
 namespace DyingLightHeadTracking {
 
-// The shipped defaults. WriteDefaultIni writes these and Config's members are
-// initialised from them. The frozen reader in legacy_config/ falls back to its own
-// copy of the same values.
+// The shipped defaults, in one place. WriteDefaultIni writes these, LoadOrCreate
+// falls back to them and Config's members are initialised from them, so a
+// default-constructed Config, a freshly written INI and a read of a missing key
+// cannot disagree about what the default is.
 namespace defaults {
 constexpr bool kEnableOnStartup = true;
 
 constexpr int kPort = 4242;
+constexpr int kMinPort = 1024;
+constexpr int kMaxPort = 65535;
 constexpr int kDataFreshnessMs = 500;
 
 constexpr bool kWorldSpaceYaw = true;
@@ -37,6 +40,8 @@ constexpr bool kCollisionEnabled = false;
 // Metres. Must exceed the camera's near clip distance, which the mod reads from
 // the engine and warns about when this is under it.
 constexpr float kCollisionRadius = 0.15f;
+constexpr float kMinCollisionRadius = 0.02f;
+constexpr float kMaxCollisionRadius = 0.5f;
 constexpr float kCollisionReleaseSmoothing = 0.9f;
 
 constexpr bool kVerbose = false;

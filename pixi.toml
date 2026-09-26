@@ -18,9 +18,10 @@ setup = { cmd = """
 build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
-# The engine-free unit tests: the view basis maths and the aim projection,
-# including the six reticle litmus tests. No game, no hooks.
-test = { cmd = "build\\Release\\dlht_tests.exe", depends-on = ["build-release"] }
+# The engine-free unit tests (the view basis maths, the aim projection with the
+# six reticle litmus tests, the gate rules) and the config differential test
+# against the published build. No game, no hooks.
+test = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-tests.ps1", depends-on = ["build-release"] }
 
 # Deploy to every copy of the game on this machine.
 deploy = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug", depends-on = ["build"] }
