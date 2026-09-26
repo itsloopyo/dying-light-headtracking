@@ -17,8 +17,8 @@
 // starts on and the actions every key press fires are the import's, apart from the approved
 // changes, each of which the import must record as dropped. ShowReticle=0, the crosshair key and
 // its chord are dropped (reticle: the game's crosshair always follows the aim now), and
-// [Collision] CollisionEnabled, which shipped off pending verification, takes the table's
-// default (follows_default). v0.1.0 read no sensitivity, inversion or scale, so nothing is
+// [Collision] CollisionEnabled, which shipped off pending verification, follows Defaults.ini
+// where it holds that off (follows_default). v0.1.0 read no sensitivity, inversion or scale, so nothing is
 // dropped as pose shaping. A value the canonical row cannot hold has no approved rule, so the
 // owner defers that import and the session runs on what the import gave (kUnrepresentable).
 //
@@ -458,6 +458,10 @@ FileStamp Stamp(const fs::path& path) {
 fs::path g_builtinDefaults;
 fs::path g_alteredDefaults;
 
+// The CollisionEnabled each Defaults.ini gives: the built-in value, and the false
+// WriteAlteredDefaults writes.
+bool DefaultsCollision(bool builtin) { return builtin && MakeConfigTable().defaults().collision_enabled; }
+
 cfg::ConfigOwnerOptions<Config> OwnerOptions(const fs::path& dir, const fs::path& defaults) {
     return MakeConfigOwnerOptions(dir.wstring() + L"\\", cfg::DefaultsFile::At(defaults.wstring()));
 }
@@ -497,8 +501,8 @@ struct Tally {
 
 // ShowReticle is dropped exactly where it was off, the crosshair key exactly where it was bound
 // and its chord exactly where it was on, [Collision] CollisionEnabled exactly where it differs
-// from the table's default, and nothing is dropped by any other rule. v0.1.0 read no pose
-// shaping, so none is recorded.
+// from the table's default, which is also exactly where the row is left to Defaults.ini, and
+// nothing is dropped by any other rule. v0.1.0 read no pose shaping, so none is recorded.
 void CheckDrops(const std::string& name, const legacy::Config& l, const ImportResult& imported, Tally& tally) {
     Check(imported.pose_shaping.empty(), name + ": the import records pose shaping v0.1.0 never read");
 
@@ -516,6 +520,11 @@ void CheckDrops(const std::string& name, const legacy::Config& l, const ImportRe
         FindDrop(imported.dropped, DropRule::FollowsDefault, "Collision", "CollisionEnabled") != nullptr;
     Check(follows == (l.collision_enabled != MakeConfigTable().defaults().collision_enabled),
           name + ": [Collision] CollisionEnabled dropped does not match its value");
+    const std::vector<cfg::schema::Concept> leftToDefaults =
+        follows ? std::vector<cfg::schema::Concept>{cfg::schema::Concept::CollisionEnabled}
+                : std::vector<cfg::schema::Concept>{};
+    Check(imported.follows_defaults_ini == leftToDefaults,
+          name + ": the rows left to Defaults.ini are not CollisionEnabled exactly where it is dropped");
     if (follows) ++tally.with_follows_default;
 
     for (const DroppedValue& d : imported.dropped) {
@@ -527,8 +536,9 @@ void CheckDrops(const std::string& name, const legacy::Config& l, const ImportRe
 // The settings the mod starts on after the migration against the ones the frozen reader's build
 // started on, with the approved changes applied: the crosshair always follows the aim with no
 // key of its own (CheckDrops holds the import to recording what it leaves out), and the lean
-// clamp at the table's default.
-std::vector<std::string> StartupDifferences(const legacy::Config& l, const Config& m) {
+// clamp on where the player turned it on and at `defaultsCollision`, what Defaults.ini gives,
+// where the file holds the off v0.1.0 shipped.
+std::vector<std::string> StartupDifferences(const legacy::Config& l, const Config& m, bool defaultsCollision) {
     std::vector<std::string> d;
     if (m.enable_on_startup != l.enabled_on_startup) d.push_back("EnableOnStartup");
     if (m.udp_port != l.udp_port) d.push_back("UdpPort");
@@ -550,7 +560,7 @@ std::vector<std::string> StartupDifferences(const legacy::Config& l, const Confi
     if (!SameBits(m.position.limit_y_down, l.pos_limit_y_down)) d.push_back("PositionLimitYDown");
     if (!SameBits(m.position.limit_z, l.pos_limit_z)) d.push_back("PositionLimitZ");
     if (!SameBits(m.position.limit_z_back, l.pos_limit_z_back)) d.push_back("PositionLimitZBack");
-    if (m.collision_enabled != MakeConfigTable().defaults().collision_enabled) d.push_back("CollisionEnabled");
+    if (m.collision_enabled != (l.collision_enabled || defaultsCollision)) d.push_back("CollisionEnabled");
     if (!SameBits(m.lean_clamp.skin, l.collision_radius)) d.push_back("CollisionMargin");
     if (!SameBits(m.lean_clamp.release_smoothing, l.collision_release_smoothing)) d.push_back("CollisionReleaseSmoothing");
     if (m.verbose != l.verbose) d.push_back("Verbose");
@@ -610,7 +620,7 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
         Check(after.files == Files{{kConfigFileName, tally.committed}},
               name + ": the folder does not hold CameraUnlock.ini as DyingLightHeadTracking.ini and nothing else");
         if (builtin) {
-            const std::vector<std::string> d = StartupDifferences(import.config, loaded.config);
+            const std::vector<std::string> d = StartupDifferences(import.config, loaded.config, DefaultsCollision(builtin));
             Check(d.empty(), name + ": comparison 2: " + Join(d));
         }
         return;
@@ -627,7 +637,7 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
 
     // Imported or deferred, the session runs on the settings the load hands back.
     {
-        const std::vector<std::string> d = StartupDifferences(import.config, loaded.config);
+        const std::vector<std::string> d = StartupDifferences(import.config, loaded.config, DefaultsCollision(builtin));
         Check(d.empty(), name + ": comparison 2: " + Join(d));
     }
 
@@ -721,6 +731,47 @@ void WriteAlteredDefaults() {
     WriteBytes(g_alteredDefaults, text);
 }
 
+// [Collision] CollisionEnabled over Defaults.ini CollisionEnabled=true (the built-in values) and
+// false (the changed file). The 0 v0.1.0 shipped is no player's choice, so it migrates as default
+// and the session takes Defaults.ini's value. A 1 the player set is carried: default where
+// Defaults.ini also gives true, the value where it gives false.
+void CollisionFollowsDefaultsIni(Scratch& scratch, const std::string& shipped) {
+    const std::string off = "\nCollisionEnabled=0\n";
+    const size_t at = shipped.find(off);
+    if (at == std::string::npos) throw std::runtime_error("the shipped file has no CollisionEnabled=0 line");
+    std::string on = shipped;
+    on.replace(at, off.size(), "\nCollisionEnabled=1\n");
+
+    struct Case {
+        const char* legacy;
+        const std::string* bytes;
+        bool builtin;
+        const char* line;
+        bool value;
+    };
+    const Case cases[] = {
+        {"CollisionEnabled=0", &shipped, true, "CollisionEnabled=default", true},
+        {"CollisionEnabled=0", &shipped, false, "CollisionEnabled=default", false},
+        {"CollisionEnabled=1", &on, true, "CollisionEnabled=default", true},
+        {"CollisionEnabled=1", &on, false, "CollisionEnabled=true", true},
+    };
+    for (const Case& c : cases) {
+        const std::string name = std::string("legacy ") + c.legacy + " over Defaults.ini CollisionEnabled=" +
+                                 (DefaultsCollision(c.builtin) ? "true" : "false");
+        const fs::path dir = scratch.Clean("collision");
+        WriteBytes(dir / kFileName, *c.bytes);
+        const cfg::ConfigLoadResult<Config> loaded =
+            cfg::ConfigOwner<Config>(OwnerOptions(dir, c.builtin ? g_builtinDefaults : g_alteredDefaults)).Load();
+        Check(loaded.status == ConfigLoadStatus::Migrated,
+              name + ": the migration is " + cfg::ConfigLoadStatusName(loaded.status) + ": " + loaded.reason);
+        const std::string migrated = ReadBytes(dir / kConfigFileName);
+        Check(migrated.find(std::string("\r\n") + c.line + "\r\n") != std::string::npos,
+              name + ": CameraUnlock.ini does not hold " + c.line);
+        Check(loaded.config.collision_enabled == c.value,
+              name + ": the session runs with CollisionEnabled=" + (loaded.config.collision_enabled ? "true" : "false"));
+    }
+}
+
 std::vector<Input> Inputs(const std::string& shipped, const std::string& firstRun) {
     using cameraunlock::config::testing::GenerateIniMutations;
     std::vector<Input> inputs;
@@ -783,6 +834,8 @@ int main() {
                       ReadBytes(dir / kConfigFileName) == tally.committed,
                   std::string("v0.1.0's ") + label + " does not import into the committed file");
         }
+
+        CollisionFollowsDefaultsIni(scratch, shipped);
 
         const std::vector<Input> inputs = Inputs(shipped, firstRun);
         std::printf("%zu inputs\n", inputs.size());

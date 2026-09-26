@@ -81,11 +81,14 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.position.limit_z = c.pos_limit_z;
     out.position.limit_z_back = c.pos_limit_z_back;
 
-    // The lean clamp shipped switched off pending verification, so it takes the table's default
-    // (approved change follows_default).
+    // v0.1.0 shipped the lean clamp switched off pending verification, so an off here is the
+    // build's value, not the player's: the row follows Defaults.ini (approved change
+    // follows_default). An on the player set is carried.
+    std::vector<cameraunlock::config::schema::Concept> follows_defaults_ini;
     out.collision_enabled = MakeConfigTable().defaults().collision_enabled;
     if (c.collision_enabled != out.collision_enabled) {
         dropped.push_back({DropRule::FollowsDefault, "Collision", "CollisionEnabled", c.collision_enabled ? "1" : "0"});
+        follows_defaults_ini.push_back(cameraunlock::config::schema::Concept::CollisionEnabled);
     }
     out.lean_clamp.skin = c.collision_radius;
     out.lean_clamp.release_smoothing = c.collision_release_smoothing;
@@ -104,8 +107,9 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.cycle_tracking_mode_key_name = KeyList(c.vk_cycle_mode, c.chord_cycle_mode, 'G', "CycleMode", dropped);
     out.yaw_mode_key_name = KeyList(c.vk_yaw_mode, c.chord_yaw_mode, 'H', "YawMode", dropped);
 
-    return read.status == legacy::ReadStatus::Absent ? ImportResult::Absent(std::move(dropped))
-                                                     : ImportResult::Imported(std::move(dropped));
+    return read.status == legacy::ReadStatus::Absent
+               ? ImportResult::Absent(std::move(dropped), {}, std::move(follows_defaults_ini))
+               : ImportResult::Imported(std::move(dropped), {}, std::move(follows_defaults_ini));
 }
 
 }  // namespace
