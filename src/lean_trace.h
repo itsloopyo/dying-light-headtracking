@@ -10,7 +10,7 @@ struct Context {
     // The standoff the clamp holds, in metres. The engine query is a zero-extent
     // ray, so the standoff lives in the clamp's skin and the ray overreaches to
     // cover it.
-    float standoff = defaults::kCollisionRadius;
+    float standoff = kCollisionMarginMetres;
 };
 
 // LeanQueryFn over the engine's own world raycast. Casts from the clean eye along

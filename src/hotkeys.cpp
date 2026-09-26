@@ -2,9 +2,13 @@
 
 #include "logging.h"
 
-#include "cameraunlock/input/chord_hotkeys.h"
+#include "cameraunlock/input/key_binding_registration.h"
+#include "cameraunlock/input/key_bindings.h"
 
 #include <exception>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace DyingLightHeadTracking {
 
@@ -12,26 +16,26 @@ namespace {
 
 constexpr int kPollIntervalMs = 16;
 
+// The config table already refused a list that does not parse, so one here is a bug rather
+// than a player's typo.
+std::vector<cameraunlock::input::KeyBinding> Parse(const std::string& list) {
+    cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(list);
+    if (!parsed.ok()) throw std::logic_error("hotkey list '" + list + "' does not parse: " + parsed.error);
+    return parsed.bindings;
+}
+
 }  // namespace
 
-bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode,
-                    Action onYawMode, Action onReticle) {
+bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode) {
     if (m_started.load(std::memory_order_acquire)) return true;
 
-    using cameraunlock::input::ChordGuarded;
-    using cameraunlock::input::NavGuarded;
-
-    // Nav-cluster keys are ignored while Ctrl+Shift is held, so a chord is the
-    // only trigger for Ctrl+Shift+<nav> and one press never fires twice.
-    m_poller.SetToggleKey(cfg.vk_toggle, NavGuarded(onToggle));
-    m_poller.AddHotkey(cfg.vk_cycle_mode, NavGuarded(onCycleMode));
-    m_poller.AddHotkey(cfg.vk_yaw_mode, NavGuarded(onYawMode));
-    m_poller.AddHotkey(cfg.vk_reticle, NavGuarded(onReticle));
-
-    if (cfg.chord_toggle)     m_poller.AddHotkey('Y', ChordGuarded(std::move(onToggle)));
-    if (cfg.chord_cycle_mode) m_poller.AddHotkey('G', ChordGuarded(std::move(onCycleMode)));
-    if (cfg.chord_yaw_mode)   m_poller.AddHotkey('H', ChordGuarded(std::move(onYawMode)));
-    if (cfg.chord_reticle)    m_poller.AddHotkey('U', ChordGuarded(std::move(onReticle)));
+    // One registration per key: a binding without modifiers stays quiet while Ctrl and Shift
+    // are both held, so Ctrl+Shift with a key reaches only a binding that names it, and one
+    // press never fires an action twice.
+    using cameraunlock::input::RegisterKeyBindings;
+    RegisterKeyBindings(m_poller, Parse(cfg.toggle_key_name), std::move(onToggle));
+    RegisterKeyBindings(m_poller, Parse(cfg.cycle_tracking_mode_key_name), std::move(onCycleMode));
+    RegisterKeyBindings(m_poller, Parse(cfg.yaw_mode_key_name), std::move(onYawMode));
 
     // Reached from a __stdcall thread procedure, where an escaping exception is
     // std::terminate and the game would vanish with the reason unwritten.
@@ -45,8 +49,8 @@ bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode,
         return false;
     }
 
-    Log::Line("Hotkeys: toggle=0x%02X cyclemode=0x%02X yawmode=0x%02X reticle=0x%02X",
-              cfg.vk_toggle, cfg.vk_cycle_mode, cfg.vk_yaw_mode, cfg.vk_reticle);
+    Log::Line("Hotkeys: toggle=[%s] cycle mode=[%s] yaw mode=[%s]", cfg.toggle_key_name.c_str(),
+              cfg.cycle_tracking_mode_key_name.c_str(), cfg.yaw_mode_key_name.c_str());
 
     m_started.store(true, std::memory_order_release);
     return true;

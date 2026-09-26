@@ -9,7 +9,7 @@ the binary distribution has to carry them.
 - **Version:** `3f3a821aa00d5b87ecde7c4af77585ff2fc71ff5`
 - **License:** MIT
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
-- **Usage:** Statically linked into `DyingLightHeadTracking.asi` for the OpenTrack UDP receiver, pose interpolation and smoothing, the position processor, the lean clamp policy, the FOV zoom compensation, the hotkey poller, the RTTI vtable lookup, the byte-pattern scanner, the PE fingerprint reader, the INI reader, the file log and the crash handler.
+- **Usage:** Statically linked into `DyingLightHeadTracking.asi` for the OpenTrack UDP receiver, pose interpolation and smoothing, the position processor, the lean clamp policy, the FOV zoom compensation, the hotkey poller, the RTTI vtable lookup, the byte-pattern scanner, the PE fingerprint reader, the config owner and hotkey key lists, the legacy INI reader, the file log and the crash handler.
 - **Bundled:** yes
 
 Copyright (c) 2026 itsloopyo. Same MIT terms as this mod's own `LICENSE`, which

@@ -12,14 +12,9 @@ void TrackingRuntime::Start(const Config& cfg) {
 
     // No sensitivity, deadzone or inversion is set: the core defaults are 1:1
     // with neither, which is the pose the tracker sent. Shaping it is the tracker
-    // app's job, so one profile behaves the same in every game.
-    cameraunlock::PositionSettings pos;
-    pos.limit_x = m_cfg.pos_limit_x;
-    pos.limit_y = m_cfg.pos_limit_y;
-    pos.limit_y_down = m_cfg.pos_limit_y_down;
-    pos.limit_z = m_cfg.pos_limit_z;
-    pos.limit_z_back = m_cfg.pos_limit_z_back;
-    m_session.SetPositionSettings(pos);
+    // app's job, so one profile behaves the same in every game. The limits and the
+    // smoothing copies come from the config.
+    m_session.SetPositionSettings(m_cfg.position);
 
     // One value feeds both the rotation and the position processor - there is no
     // separate position smoothing setting - picked per connection from the
@@ -29,21 +24,23 @@ void TrackingRuntime::Start(const Config& cfg) {
     m_session.SetLocalSmoothing(m_cfg.local_smoothing);
     m_session.SetRemoteSmoothing(m_cfg.remote_smoothing);
 
-    m_enabled.store(m_cfg.enabled_on_startup, std::memory_order_relaxed);
+    m_enabled.store(m_cfg.enable_on_startup, std::memory_order_relaxed);
     m_worldSpaceYaw.store(m_cfg.world_space_yaw, std::memory_order_relaxed);
-    m_reticle.store(m_cfg.show_reticle, std::memory_order_relaxed);
-    m_session.SetMode(m_cfg.position_enabled ? cameraunlock::TrackingMode::RotationAndPosition
-                                             : cameraunlock::TrackingMode::RotationOnly);
+    // The table never loads a pair that names no mode: it reads both as their defaults
+    // instead.
+    m_session.SetMode(
+        cameraunlock::DecodeTrackingMode(m_cfg.rotation_enabled, m_cfg.position_enabled).value());
 
     m_receiver.SetLog([](const std::string& msg) { Log::Line("UDP: %s", msg.c_str()); });
 
     m_started.store(true, std::memory_order_release);
 
-    if (m_receiver.Start(m_cfg.udp_port)) {
-        Log::Line("UDP receiver listening on port %u", m_cfg.udp_port);
+    const auto port = static_cast<std::uint16_t>(m_cfg.udp_port);
+    if (m_receiver.Start(port)) {
+        Log::Line("UDP receiver listening on port %u", port);
     } else {
         Log::Line("WARN: UDP receiver did not bind immediately on port %u; background retry active",
-                  m_cfg.udp_port);
+                  port);
     }
 }
 
@@ -62,8 +59,9 @@ void TrackingRuntime::ToggleEnabled() {
     Log::Line("Tracking %s", !prev ? "enabled" : "disabled");
 }
 
-void TrackingRuntime::CycleTrackingMode() {
-    switch (m_session.CycleMode()) {
+cameraunlock::TrackingMode TrackingRuntime::CycleTrackingMode() {
+    const cameraunlock::TrackingMode mode = m_session.CycleMode();
+    switch (mode) {
         case cameraunlock::TrackingMode::RotationAndPosition:
             Log::Line("Tracking mode: rotation + position (6DOF)");
             break;
@@ -74,18 +72,14 @@ void TrackingRuntime::CycleTrackingMode() {
             Log::Line("Tracking mode: position only");
             break;
     }
+    return mode;
 }
 
-void TrackingRuntime::ToggleYawMode() {
+bool TrackingRuntime::ToggleYawMode() {
     const bool prev = m_worldSpaceYaw.load(std::memory_order_relaxed);
     m_worldSpaceYaw.store(!prev, std::memory_order_relaxed);
     Log::Line("Yaw mode: %s", !prev ? "world-space (horizon-locked)" : "camera-local");
-}
-
-void TrackingRuntime::ToggleReticle() {
-    const bool prev = m_reticle.load(std::memory_order_relaxed);
-    m_reticle.store(!prev, std::memory_order_relaxed);
-    Log::Line("Crosshair compensation %s", !prev ? "on" : "off");
+    return !prev;
 }
 
 bool TrackingRuntime::IsPoseFresh() const {

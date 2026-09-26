@@ -23,6 +23,11 @@ build-release = { cmd = "cmake --build build --config Release", depends-on = ["s
 # against the published build. No game, no hooks.
 test = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-tests.ps1", depends-on = ["build-release"] }
 
+# Rewrite DyingLightHeadTracking.ini, the committed copy of the CameraUnlock.ini the mod
+# creates at first launch, from the config table after a change to a row, a comment or a
+# default, then rewrite the per_game of launcher-manifest.json's config descriptor from it.
+render-config = { cmd = "build/Release/config_tests.exe --render-config DyingLightHeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build-release"] }
+
 # Deploy to every copy of the game on this machine.
 deploy = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug", depends-on = ["build"] }
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build-release"] }
@@ -30,6 +35,10 @@ uninstall = 'cmd /c scripts\uninstall.cmd'
 
 # CI runs exactly this, so there is no second copy of the build to drift.
 package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
+
+# The manifest gate, runnable on its own: reads the newest installer ZIP in release/,
+# so package first.
+validate-manifest = { cmd = "node cameraunlock-core/scripts/validate-manifest.mjs" }
 
 # Changelog, version stamp, package, commit, tag, push. Unattended:
 # `pixi run release minor` is the authorization and nothing prompts.

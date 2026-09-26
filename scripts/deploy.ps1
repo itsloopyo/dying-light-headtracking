@@ -3,8 +3,9 @@
 # game this machine holds. pixi run install builds first and then calls this.
 # Detection and the per-install loop live in cameraunlock-core's DevDeploy.psm1.
 #
-# The ini is deliberately not deployed: a dev copy next to the exe is usually
-# hand-tuned, and the mod writes its own defaults when none is there.
+# No config is deployed: the mod creates CameraUnlock.ini at its first start, and
+# a copy from here would overwrite the developer's own CameraUnlock.ini or the
+# DyingLightHeadTracking.ini an older build reads.
 
 param(
     [Parameter(Position = 0)]

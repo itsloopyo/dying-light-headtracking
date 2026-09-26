@@ -36,13 +36,13 @@ set "ASI_SUBDIR="
 :: Files copied only when they are not already there, so an upgrade keeps
 :: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
 :: the unconditional copy and resets every key on every update.
-set "MOD_SEED_FILES=DyingLightHeadTracking.ini"
+set "MOD_SEED_FILES="
 :: Version of the vendored Ultimate ASI Loader, recorded in the state file so
 :: the launcher can tell which loader build it is looking at. Leave empty to
 :: omit the field. Bump alongside vendor/ via `pixi run update-deps`.
 set "ASI_LOADER_VERSION=9.7.4"
 :: Post-install help text. `&echo ` starts each further line.
-set "MOD_CONTROLS=Controls:&echo   End       - Toggle head tracking on/off&echo   Page Up   - Cycle tracking mode (full / rotation only / position only)&echo   Page Down - Toggle yaw mode (camera-local / horizon-locked)&echo   Insert    - Toggle crosshair compensation&echo   Ctrl+Shift+Y / G / H / U - the same four actions"
+set "MOD_CONTROLS=Controls:&echo   End       - Toggle head tracking on/off&echo   Page Up   - Cycle tracking mode (full / rotation only / position only)&echo   Page Down - Toggle yaw mode (camera-local / horizon-locked)&echo   Ctrl+Shift+Y / G / H - the same three actions&echo   Keys are set in CameraUnlock.ini beside the game exe"
 :: --- END CONFIG BLOCK ---
 
 :: Pin delayed expansion off before `%*` is expanded on the `call` below.

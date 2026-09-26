@@ -1,89 +1,46 @@
 #pragma once
 
-#include <cstdint>
+#include "cameraunlock/config/config_owner.h"
+#include "cameraunlock/config/config_table.h"
+#include "cameraunlock/config/defaults_file.h"
+#include "cameraunlock/config/head_tracking_config.h"
+#include "cameraunlock/config/legacy_import.h"
 
-#include "cameraunlock/data/position_settings.h"
-#include "cameraunlock/math/smoothing_utils.h"
+#include <string>
 
 namespace DyingLightHeadTracking {
 
-// The shipped defaults. WriteDefaultIni writes these and Config's members are
-// initialised from them. The frozen reader in legacy_config/ falls back to its own
-// copy of the same values.
-namespace defaults {
-constexpr bool kEnableOnStartup = true;
+constexpr const char* kConfigFileName = "CameraUnlock.ini";
+// The file every build before the canonical format read, beside kConfigFileName. Imported once
+// while kConfigFileName is absent, and never written.
+constexpr const char* kLegacyConfigFileName = "DyingLightHeadTracking.ini";
+// The game's name as cameraunlock-core's data/games.json spells it.
+constexpr const char* kConfigDisplayName = "Dying Light";
 
-constexpr int kPort = 4242;
-constexpr int kDataFreshnessMs = 500;
+// Metres the leaned eye is held off the surface the lean ran into. It has to exceed the camera's
+// near clip distance (the first-frame log line reports it) or the surface is culled and the
+// player sees through it anyway.
+constexpr float kCollisionMarginMetres = 0.15f;
 
-constexpr bool kWorldSpaceYaw = true;
-constexpr bool kShowReticle = true;
+// Core's config with this game's defaults and its two diagnostics switches.
+struct Config : cameraunlock::HeadTrackingConfig {
+    bool verbose = false;
+    bool ignore_gameplay_gate = false;
 
-constexpr float kLocalSmoothing = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
-constexpr float kRemoteSmoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
-
-constexpr bool kPositionEnabled = true;
-constexpr float kPosLimitX = cameraunlock::PositionSettings{}.limit_x;
-constexpr float kPosLimitY = cameraunlock::PositionSettings{}.limit_y;
-constexpr float kPosLimitYDown = cameraunlock::PositionSettings{}.limit_y_down;
-constexpr float kPosLimitZ = cameraunlock::PositionSettings{}.limit_z;
-constexpr float kPosLimitZBack = cameraunlock::PositionSettings{}.limit_z_back;
-
-// Ships off. The lean clamp calls the engine's physics every frame the head is
-// off centre, through a trace context captured from the game's own calls, and
-// until a log from a real session shows it stopping at real walls at the right
-// distance an unverified trace either blocks on nothing or blocks on everything.
-constexpr bool kCollisionEnabled = false;
-// Metres. Must exceed the camera's near clip distance, which the mod reads from
-// the engine and warns about when this is under it.
-constexpr float kCollisionRadius = 0.15f;
-constexpr float kCollisionReleaseSmoothing = 0.9f;
-
-constexpr bool kVerbose = false;
-constexpr bool kIgnoreGameplayGate = false;
-
-constexpr int kVkToggle = 0x23;      // End
-constexpr int kVkCycleMode = 0x21;   // Page Up
-constexpr int kVkYawMode = 0x22;     // Page Down
-constexpr int kVkReticle = 0x2D;     // Insert
-constexpr bool kChord = true;
-}  // namespace defaults
-
-struct Config {
-    bool enabled_on_startup = defaults::kEnableOnStartup;
-    std::uint16_t udp_port = static_cast<std::uint16_t>(defaults::kPort);
-    int data_freshness_ms = defaults::kDataFreshnessMs;
-
-    bool world_space_yaw = defaults::kWorldSpaceYaw;
-    bool show_reticle = defaults::kShowReticle;
-
-    float local_smoothing = defaults::kLocalSmoothing;
-    float remote_smoothing = defaults::kRemoteSmoothing;
-
-    bool position_enabled = defaults::kPositionEnabled;
-    float pos_limit_x = defaults::kPosLimitX;
-    float pos_limit_y = defaults::kPosLimitY;
-    float pos_limit_y_down = defaults::kPosLimitYDown;
-    float pos_limit_z = defaults::kPosLimitZ;
-    float pos_limit_z_back = defaults::kPosLimitZBack;
-
-    bool verbose = defaults::kVerbose;
-    bool ignore_gameplay_gate = defaults::kIgnoreGameplayGate;
-
-    bool collision_enabled = defaults::kCollisionEnabled;
-    float collision_radius = defaults::kCollisionRadius;
-    float collision_release_smoothing = defaults::kCollisionReleaseSmoothing;
-
-    int vk_toggle = defaults::kVkToggle;
-    int vk_cycle_mode = defaults::kVkCycleMode;
-    int vk_yaw_mode = defaults::kVkYawMode;
-    int vk_reticle = defaults::kVkReticle;
-    bool chord_toggle = defaults::kChord;
-    bool chord_cycle_mode = defaults::kChord;
-    bool chord_yaw_mode = defaults::kChord;
-    bool chord_reticle = defaults::kChord;
-
-    bool LoadOrCreate(const char* iniPath);
+    Config() { lean_clamp.skin = kCollisionMarginMetres; }
 };
+
+// The rows of CameraUnlock.ini. Only the tracking mode pair and WorldSpaceYaw are Writable: the
+// mode and yaw hotkeys save the player's choice, and End changes the session only.
+cameraunlock::config::ConfigTable<Config> MakeConfigTable();
+
+// DyingLightHeadTracking.ini as v0.1.0 read it (legacy_config/), mapped into Config.
+cameraunlock::config::LegacyImport<Config> MakeLegacyImport();
+
+// The owner's options for the files in `folder` (with its trailing separator): the settings in
+// CameraUnlock.ini, imported once from DyingLightHeadTracking.ini. The mod passes
+// DefaultsFile::PerUser() and a test a scratch file.
+cameraunlock::config::ConfigOwnerOptions<Config> MakeConfigOwnerOptions(const std::wstring& folder,
+                                                                        cameraunlock::config::DefaultsFile defaults);
 
 }  // namespace DyingLightHeadTracking

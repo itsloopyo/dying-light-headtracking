@@ -117,16 +117,44 @@ target_compile_definitions(dlht_hotkeys_oracle PRIVATE
 
 add_executable(config_differential_tests
     ${DLHT_DIFFERENTIAL_DIR}/differential_tests.cpp
+    src/config.cpp
     src/legacy_config/legacy_config.cpp
+    src/path_utils.cpp
 )
 target_include_directories(config_differential_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${DLHT_DIFFERENTIAL_DIR})
 target_compile_definitions(config_differential_tests PRIVATE
-    DLHT_DIFFERENTIAL_DATA="${DLHT_DIFFERENTIAL_DIR}/data")
+    DLHT_DIFFERENTIAL_DATA="${DLHT_DIFFERENTIAL_DIR}/data"
+    DLHT_COMMITTED_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/DyingLightHeadTracking.ini")
 target_link_libraries(config_differential_tests PRIVATE
     cameraunlock dlht_config_oracle dlht_hotkeys_oracle)
 if(MSVC)
     target_compile_options(config_differential_tests PRIVATE /W4 /WX /permissive-)
 endif()
 add_test(NAME config_differential_tests COMMAND config_differential_tests)
+
+# Core's canonical config lint over the committed file and every file the differential test
+# migrated, which it writes beside itself under migrated.
+add_test(NAME config_lint COMMAND node
+    ${DLHT_DIFFERENTIAL_DIR}/lint-migrated.mjs
+    $<TARGET_FILE_DIR:config_differential_tests>/migrated)
+set_tests_properties(config_lint PROPERTIES DEPENDS config_differential_tests)
+
+# The committed config against the table, a first start, the toggles' saves and the legacy
+# file's ANSI path. `--render-config <path>` makes it write the committed file instead (pixi run
+# render-config).
+add_executable(config_tests
+    tests/config_tests.cpp
+    src/config.cpp
+    src/legacy_config/legacy_config.cpp
+    src/path_utils.cpp
+)
+target_include_directories(config_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(config_tests PRIVATE
+    DLHT_COMMITTED_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/DyingLightHeadTracking.ini")
+target_link_libraries(config_tests PRIVATE cameraunlock)
+if(MSVC)
+    target_compile_options(config_tests PRIVATE /W4 /WX /permissive-)
+endif()
+add_test(NAME config_tests COMMAND config_tests)

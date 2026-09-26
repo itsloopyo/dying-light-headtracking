@@ -15,12 +15,15 @@
 #include "window_centering.h"
 #include "world_query.h"
 
+#include "cameraunlock/config/config_owner.h"
 #include "cameraunlock/diagnostics/crash_handler.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
 #include <MinHook.h>
 #include <process.h>
 #include <windows.h>
 
+#include <exception>
 #include <string>
 
 namespace {
@@ -30,7 +33,6 @@ using namespace DyingLightHeadTracking;
 constexpr const char* kGameExe = "DyingLightGame.exe";
 constexpr const char* kEngineDll = "engine_x64_rwdi.dll";
 constexpr const char* kGameDll = "gamedll_x64_rwdi.dll";
-constexpr const char* kIniFileName = "DyingLightHeadTracking.ini";
 constexpr const char* kLogFileName = "DyingLightHeadTracking.log";
 constexpr const char* kShotTriggerName = "DyingLightHeadTracking.shot";
 
@@ -45,6 +47,37 @@ HANDLE g_shutdownEvent = nullptr;
 TrackingRuntime g_tracking;
 Hotkeys g_hotkeys;
 bool g_minHookReady = false;
+
+// The one reader and writer of CameraUnlock.ini. Built and loaded on the init thread before the
+// hotkeys start, and saved through from the hotkey thread afterwards. Never destroyed: the
+// poller thread can still be saving while DLL_PROCESS_DETACH runs at process exit.
+cameraunlock::config::ConfigOwner<Config>* g_configOwner = nullptr;
+
+// A save that did not happen has already reached the log through the status sink; the session
+// keeps the state the toggle applied. A save that did can carry a line too, naming a row that
+// stopped following Defaults.ini.
+void LogSave(const cameraunlock::config::ConfigSaveResult& saved) {
+    for (const std::string& line : saved.log) Log::Line("%s", line.c_str());
+    if (saved.status != cameraunlock::config::ConfigSaveStatus::Saved) {
+        Log::Line("WARN: the change applies for this session only.");
+    }
+}
+
+// Each toggle applies its new state first, then saves it. End is not here: it changes the
+// session only, and EnableOnStartup decides the next start.
+void CycleTrackingModeAndSave() {
+    const cameraunlock::TrackingModeChannels channels =
+        cameraunlock::EncodeTrackingMode(g_tracking.CycleTrackingMode());
+    LogSave(g_configOwner->Save([channels](Config& c) {
+        c.rotation_enabled = channels.rotation_enabled;
+        c.position_enabled = channels.position_enabled;
+    }));
+}
+
+void ToggleYawModeAndSave() {
+    const bool worldSpace = g_tracking.ToggleYawMode();
+    LogSave(g_configOwner->Save([worldSpace](Config& c) { c.world_space_yaw = worldSpace; }));
+}
 
 bool SleepUnlessUnloading(int ms) {
     return WaitForSingleObject(g_shutdownEvent, static_cast<DWORD>(ms)) == WAIT_TIMEOUT;
@@ -119,7 +152,7 @@ private:
     unsigned long long m_lastPosed = 0;
 };
 
-unsigned __stdcall InitThread(void*) {
+unsigned InitThreadBody() {
     OpenSessionLog();
     Log::Line("%s v%s loaded", kModName, kModVersion);
 
@@ -151,23 +184,36 @@ unsigned __stdcall InitThread(void*) {
     // gaze callbacks still cannot read anything back out.
     eyex_block::Install(GetModuleHandleA(kEngineDll));
 
-    const std::string iniPath = GetModulePath(kIniFileName);
-    if (iniPath.empty()) {
-        Log::Line("ERROR: could not resolve the path to %s beside this DLL; staying dormant",
-                  kIniFileName);
+    // Only DyingLightGame.exe loads this mod: the ASI loader sits beside it, and nothing else
+    // in the game folder imports it, so one process opens this folder's config.
+    const std::wstring folder = GetModuleDirectoryW();
+    if (folder.empty()) {
+        Log::Line("ERROR: the folder this mod was loaded from could not be read, so there is "
+                  "nowhere to read the settings from; staying dormant");
         return 1;
     }
-    Config cfg;
-    if (!cfg.LoadOrCreate(iniPath.c_str())) {
+    cameraunlock::config::ConfigOwnerOptions<Config> options =
+        MakeConfigOwnerOptions(folder, cameraunlock::config::DefaultsFile::PerUser());
+    // The log is the only place this mod can tell the player anything.
+    options.status_sink = [](const std::string& message) { Log::Line("WARN: %s", message.c_str()); };
+    g_configOwner = new cameraunlock::config::ConfigOwner<Config>(std::move(options));
+
+    const cameraunlock::config::ConfigLoadResult<Config> loaded = g_configOwner->Load();
+    for (const std::string& line : loaded.log) Log::Line("%s", line.c_str());
+    Log::Line("Config: %s", cameraunlock::config::ConfigLoadStatusName(loaded.status));
+    // The build DyingLightHeadTracking.ini was written for refused it and did not start, so this
+    // one does the same until the player fixes it.
+    if (loaded.status == cameraunlock::config::ConfigLoadStatus::LegacyRefused) {
         Log::Line("ERROR: Config load failed");
         return 1;
     }
-    Log::Line("Config: port=%u enabled=%d smoothing local %.2f / remote %.2f position=%d "
-              "worldyaw=%d reticle=%d collision=%d radius %.2f verbose=%d",
-              cfg.udp_port, cfg.enabled_on_startup, static_cast<double>(cfg.local_smoothing),
-              static_cast<double>(cfg.remote_smoothing), cfg.position_enabled,
-              cfg.world_space_yaw, cfg.show_reticle, cfg.collision_enabled,
-              static_cast<double>(cfg.collision_radius), cfg.verbose);
+    const Config& cfg = loaded.config;
+    Log::Line("Config: port=%d enabled=%d smoothing local %.2f / remote %.2f rotation=%d "
+              "position=%d worldyaw=%d collision=%d margin %.2f verbose=%d",
+              cfg.udp_port, cfg.enable_on_startup, static_cast<double>(cfg.local_smoothing),
+              static_cast<double>(cfg.remote_smoothing), cfg.rotation_enabled, cfg.position_enabled,
+              cfg.world_space_yaw, cfg.collision_enabled, static_cast<double>(cfg.lean_clamp.skin),
+              cfg.verbose);
 
     const MH_STATUS mh = MH_Initialize();
     if (mh != MH_OK) {
@@ -177,9 +223,8 @@ unsigned __stdcall InitThread(void*) {
     g_minHookReady = true;
 
     g_tracking.Start(cfg);
-    if (!g_hotkeys.Start(cfg, [] { g_tracking.ToggleEnabled(); },
-                         [] { g_tracking.CycleTrackingMode(); },
-                         [] { g_tracking.ToggleYawMode(); }, [] { g_tracking.ToggleReticle(); })) {
+    if (!g_hotkeys.Start(cfg, [] { g_tracking.ToggleEnabled(); }, [] { CycleTrackingModeAndSave(); },
+                         [] { ToggleYawModeAndSave(); })) {
         g_tracking.Stop();
         return 1;
     }
@@ -211,6 +256,19 @@ unsigned __stdcall InitThread(void*) {
         heartbeat.Tick();
     } while (SleepUnlessUnloading(kHeartbeatMs));
     return 0;
+}
+
+// A __stdcall thread procedure, where an escaping exception is std::terminate: the game dying
+// outright with the log stopping mid-startup. The UDP receiver and the hotkey poller each
+// construct a std::thread, which throws when the process cannot spawn one, and the config owner
+// allocates and throws for a table it cannot render.
+unsigned __stdcall InitThread(void*) {
+    try {
+        return InitThreadBody();
+    } catch (const std::exception& e) {
+        Log::Line("ERROR: startup stopped: %s. Head tracking is inactive this session.", e.what());
+        return 1;
+    }
 }
 
 }  // namespace

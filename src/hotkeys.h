@@ -13,8 +13,8 @@ class Hotkeys {
 public:
     using Action = std::function<void()>;
 
-    bool Start(const Config& cfg, Action onToggle, Action onCycleMode,
-               Action onYawMode, Action onReticle);
+    // Registers each action on every key its list in the config names.
+    bool Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode);
     void Stop();
 
 private:

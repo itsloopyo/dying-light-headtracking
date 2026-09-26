@@ -216,10 +216,6 @@ void StandDown(const diagnostics::FrameTrace& trace) {
 void PublishReticle(const ViewBasis& clean, const ViewBasis& rendered, const FrameTangents& t,
                     diagnostics::FrameTrace& trace) {
     g_haveLastAim = false;
-    if (!g_cfg.show_reticle || !g_tracking->IsReticleEnabled()) {
-        hud_crosshair::PublishCentred();
-        return;
-    }
 
     const TraceHit hit = world_query::GameAimHit();
     trace.aim_queried = hit.queried;
@@ -400,12 +396,8 @@ void Detour(engine::Camera* thiz, const engine::Vec3* forward, const engine::Vec
 bool InstallCameraHook(TrackingRuntime& tracking, const Config& cfg) {
     g_tracking = &tracking;
     g_cfg = cfg;
-    g_leanContext.standoff = cfg.collision_radius;
-
-    cameraunlock::camera::LeanClampSettings clampSettings;
-    clampSettings.skin = cfg.collision_radius;
-    clampSettings.release_smoothing = cfg.collision_release_smoothing;
-    g_leanClamp.SetSettings(clampSettings);
+    g_leanContext.standoff = cfg.lean_clamp.skin;
+    g_leanClamp.SetSettings(cfg.lean_clamp);
 
     g_target = engine::FromForwardUpPosTarget();
     if (!g_target) return false;

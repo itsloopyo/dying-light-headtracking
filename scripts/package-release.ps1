@@ -36,9 +36,6 @@ if (-not (Test-Path $releaseDir)) {
 $asiPath = Join-Path $projectDir "bin/Release/DyingLightHeadTracking.asi"
 if (-not (Test-Path $asiPath)) { throw "DyingLightHeadTracking.asi not found at: $asiPath" }
 
-$iniPath = Join-Path $projectDir "DyingLightHeadTracking.ini"
-if (-not (Test-Path $iniPath)) { throw "DyingLightHeadTracking.ini not found at: $iniPath" }
-
 $vendorAsiDir = Join-Path $projectDir "vendor/ultimate-asi-loader"
 if (-not (Test-Path (Join-Path $vendorAsiDir "dinput8.dll"))) {
     throw "Bundled ASI loader missing: $vendorAsiDir\dinput8.dll"
@@ -46,9 +43,6 @@ if (-not (Test-Path (Join-Path $vendorAsiDir "dinput8.dll"))) {
 
 $launcherManifestPath = Join-Path $projectDir "launcher-manifest.json"
 if (-not (Test-Path $launcherManifestPath)) { throw "launcher-manifest.json not found" }
-# Lopari writes the seeded ini on a fresh install, so a blob that has drifted
-# from DyingLightHeadTracking.ini ships different defaults to launcher users.
-Assert-ManifestSeedsMatchShipped -ManifestPath $launcherManifestPath -ProjectRoot $projectDir
 
 $scriptsDir = Join-Path $projectDir "scripts"
 foreach ($script in @("install.cmd", "uninstall.cmd")) {
@@ -82,8 +76,6 @@ $pluginsDir = Join-Path $stagingDir "plugins"
 New-Item -ItemType Directory -Path $pluginsDir -Force | Out-Null
 Copy-Item $asiPath -Destination $pluginsDir -Force
 Write-Host "  plugins/DyingLightHeadTracking.asi" -ForegroundColor Green
-Copy-Item $iniPath -Destination $pluginsDir -Force
-Write-Host "  plugins/DyingLightHeadTracking.ini" -ForegroundColor Green
 
 # Ultimate ASI Loader travels with the installer so install.cmd never reaches
 # the network. Its MIT licence has to travel with the binary, so a missing

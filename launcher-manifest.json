@@ -7,14 +7,6 @@
   },
   "strategy": "AsiLoader",
   "delivery_mode": "manifest",
-  "loader": {
-    "seed": [
-      {
-        "target": "DyingLightHeadTracking.ini",
-        "content_b64": "OyAgRHlpbmcgTGlnaHQgLSBIZWFkIFRyYWNraW5nIGNvbmZpZ3VyYXRpb24KOyAgTGl2ZXMgbmV4dCB0byBEeWluZ0xpZ2h0R2FtZS5leGUuIERlbGV0ZSBpdCB0byBnZXQgdGhlc2UgZGVmYXVsdHMgYmFjay4KCltHZW5lcmFsXQpFbmFibGVPblN0YXJ0dXA9MQo7ICBVRFAgcG9ydCB0aGUgdHJhY2tlciBzZW5kcyBPcGVuVHJhY2sgcGFja2V0cyB0by4KUG9ydD00MjQyCjsgIEhvdyBvbGQgdGhlIG5ld2VzdCBwYWNrZXQgbWF5IGJlIGJlZm9yZSB0aGUgdmlldyBob2xkcyBpdHMgbGFzdCBwb3NlLgpEYXRhRnJlc2huZXNzTXM9NTAwCjsgIFlhdyBtb2RlOiB0cnVlID0gaG9yaXpvbi1sb2NrZWQgKGRlZmF1bHQpLCBmYWxzZSA9IGNhbWVyYS1sb2NhbC4KV29ybGRTcGFjZVlhdz0xCjsgIE1vdmUgdGhlIGNyb3NzaGFpciBvbnRvIHdoZXJlIHRoZSBzaG90IGFjdHVhbGx5IGxhbmRzLiBXaXRoIHRoaXMgb2ZmIHRoZQo7ICBnYW1lJ3Mgb3duIGNlbnRyZS1zY3JlZW4gY3Jvc3NoYWlyIGlzIGxlZnQgYWxvbmUgYW5kIHdpbGwgbm90IG1hdGNoLgpTaG93UmV0aWNsZT0xCgpbU21vb3RoaW5nXQo7ICAwLjAgKHJlc3BvbnNpdmUpIC0gMS4wIChoZWF2eSkuIENvdmVycyByb3RhdGlvbiBhbmQgcG9zaXRpb24uCjsgIExvY2FsU21vb3RoaW5nIGFwcGxpZXMgdG8gYSB0cmFja2VyIHNlbmRpbmcgdG8gMTI3LjAuMC4xIG9uIHRoaXMgUEM7CjsgIFJlbW90ZVNtb290aGluZyBhcHBsaWVzIHRvIGFueSBvdGhlciBhZGRyZXNzLCBpbmNsdWRpbmcgdGhpcyBQQydzIG93bgo7ICBuZXR3b3JrIGFkZHJlc3MgYW5kIGEgcGhvbmUgb24geW91ciBuZXR3b3JrLgpMb2NhbFNtb290aGluZz0wClJlbW90ZVNtb290aGluZz0wLjE1CgpbUG9zaXRpb25dCjsgIDZET0YgcG9zaXRpb25hbCB0cmFja2luZywgaW4gbWV0cmVzLiBUaGUgcG9zZSBpcyB1c2VkIGF0IDE6MTsgc2hhcGUgaXQgaW4KOyAgeW91ciB0cmFja2VyLiBMaW1pdFkgYm91bmRzIHRyYXZlbCB1cCBhbmQgTGltaXRZRG93biBkb3duOyBMaW1pdFogYm91bmRzCjsgIGxlYW5pbmcgdG93YXJkIHRoZSBzY3JlZW4gYW5kIExpbWl0WkJhY2sgbGVhbmluZyBhd2F5IGZyb20gaXQuCkVuYWJsZWQ9MQpMaW1pdFg9MC4zCkxpbWl0WT0wLjIKTGltaXRZRG93bj0wLjIKTGltaXRaPTAuNApMaW1pdFpCYWNrPTAuMQoKW0NvbGxpc2lvbl0KOyAgU3RvcCBhIGxlYW4gYXQgd2FsbHMgYW5kIHByb3BzIGluc3RlYWQgb2YgcHVzaGluZyB0aGUgdmlldyB0aHJvdWdoIHRoZW0uCkNvbGxpc2lvbkVuYWJsZWQ9MAo7ICBIb3cgZmFyIHRoZSBsZWFuZWQgdmlldyBpcyBoZWxkIG9mZiBhIHN1cmZhY2UsIGluIG1ldHJlcy4KQ29sbGlzaW9uUmFkaXVzPTAuMTUKOyAgSG93IGdlbnRseSBhIGxlYW4gb3BlbnMgYmFjayB1cCBvbmNlIGFuIG9ic3RydWN0aW9uIGNsZWFycyAoMC4wIC0gMS4wKS4KQ29sbGlzaW9uUmVsZWFzZVNtb290aGluZz0wLjkKCltIb3RrZXlzXQo7ICBWaXJ0dWFsLWtleSBjb2Rlcy4gRW5kID0gdG9nZ2xlLCBQYWdlIFVwID0gY3ljbGUgdHJhY2tpbmcgbW9kZSwKOyAgUGFnZSBEb3duID0geWF3IG1vZGUsIEluc2VydCA9IGNyb3NzaGFpciBjb21wZW5zYXRpb24uClRvZ2dsZT0weDIzCkN5Y2xlTW9kZT0weDIxCllhd01vZGU9MHgyMgpSZXRpY2xlPTB4MkQKOyAgQ2hvcmQgYWx0ZXJuYXRpdmVzOiBDdHJsK1NoaWZ0K1kgLyBHIC8gSCAvIFUgZm9yIHRoZSBzYW1lIGZvdXIgYWN0aW9ucy4KQ2hvcmRUb2dnbGU9MQpDaG9yZEN5Y2xlTW9kZT0xCkNob3JkWWF3TW9kZT0xCkNob3JkUmV0aWNsZT0xCgpbRGlhZ25vc3RpY3NdClZlcmJvc2U9MApJZ25vcmVHYW1lcGxheUdhdGU9MAo="
-      }
-    ]
-  },
   "files": [
     {
       "source": "vendor/ultimate-asi-loader/dinput8.dll",
@@ -27,5 +19,12 @@
     }
   ],
   "runtime_requirements": [],
-  "dependencies": []
+  "dependencies": [],
+  "config": {
+    "path": "CameraUnlock.ini",
+    "anchor": "game_root",
+    "legacy_source": "DyingLightHeadTracking.ini",
+    "canonical_since": "0.2.0",
+    "per_game": {}
+  }
 }

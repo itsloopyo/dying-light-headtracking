@@ -5,6 +5,7 @@
 #include "cameraunlock/protocol/udp_receiver.h"
 #include "cameraunlock/time/frame_clock.h"
 #include "cameraunlock/tracking/head_tracking_session.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
 #include <atomic>
 
@@ -37,13 +38,12 @@ public:
     bool IsReceiving() const { return m_receiver.IsReceiving(); }
 
     void ToggleEnabled();
-    void CycleTrackingMode();
-    void ToggleYawMode();
-    void ToggleReticle();
+    // Each returns the state it switched to.
+    cameraunlock::TrackingMode CycleTrackingMode();
+    bool ToggleYawMode();
 
     bool IsEnabled() const { return m_enabled.load(std::memory_order_relaxed); }
     bool IsWorldSpaceYaw() const { return m_worldSpaceYaw.load(std::memory_order_relaxed); }
-    bool IsReticleEnabled() const { return m_reticle.load(std::memory_order_relaxed); }
 
 private:
     static constexpr float kMaxFrameDtSec = 0.25f;
@@ -66,7 +66,6 @@ private:
     std::atomic<bool> m_started{false};
     std::atomic<bool> m_enabled{false};
     std::atomic<bool> m_worldSpaceYaw{false};
-    std::atomic<bool> m_reticle{true};
 };
 
 }  // namespace DyingLightHeadTracking

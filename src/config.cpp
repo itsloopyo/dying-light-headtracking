@@ -1,143 +1,157 @@
 #include "config.h"
 
 #include "legacy_config/legacy_config.h"
-#include "logging.h"
+#include "path_utils.h"
 
-#include "cameraunlock/config/ini_reader.h"
+#include "cameraunlock/config/head_tracking_config_table.h"
+#include "cameraunlock/input/key_bindings.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
-#include <windows.h>
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace DyingLightHeadTracking {
 
 namespace {
 
-using namespace defaults;
+using cameraunlock::config::DropRule;
+using cameraunlock::config::DroppedValue;
+using cameraunlock::config::ImportResult;
+using cameraunlock::config::LegacyInput;
+using cameraunlock::input::KeyBinding;
+using cameraunlock::input::KeyModifiers;
 
-bool FileExists(const char* path) {
-    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+// A legacy hotkey code and its Ctrl+Shift chord switch as one key list: the code's binding when
+// it is a key code, then the chord.
+std::string KeyList(int vk, bool chord, char letter, const char* key, std::vector<DroppedValue>& dropped) {
+    cameraunlock::config::LegacyVirtualKeyToBindings(vk, "Hotkeys", key, dropped);
+    std::vector<KeyBinding> bindings;
+    if (vk >= 0x01 && vk <= 0xFE) bindings.push_back({KeyModifiers::kNone, vk});
+    if (chord) bindings.push_back({KeyModifiers::kCtrl | KeyModifiers::kShift, letter});
+    return cameraunlock::input::FormatKeyBindings(bindings);
 }
 
-bool WriteDefaultIni(const char* path) {
-    cameraunlock::IniWriter w;
-    if (!w.Open(path)) {
-        Log::Line("ERROR: could not create %s (error %lu). The mod cannot store its settings; "
-                  "check that the game folder is writable.", path, GetLastError());
-        return false;
+std::string HexCode(int vk) {
+    char text[8];
+    std::snprintf(text, sizeof text, "0x%02X", static_cast<unsigned>(vk));
+    return text;
+}
+
+ImportResult Import(const LegacyInput& input, Config& out) {
+    // v0.1.0 opened the file by the ANSI path it built itself, not the one the owner derives, so
+    // the import builds it the same way.
+    const std::string ansiPath = LegacyAnsiPath(input.path);
+    if (ansiPath.empty()) {
+        return ImportResult::Refused(
+            "its path has no ANSI form within MAX_PATH, so the version that wrote this file could "
+            "not open it and did not start");
     }
-    w.WriteComment(" Dying Light - Head Tracking configuration");
-    w.WriteComment(" Lives next to DyingLightGame.exe. Delete it to get these defaults back.");
-    w.WriteBlankLine();
-    w.WriteSection("General");
-    w.WriteBool("EnableOnStartup", kEnableOnStartup);
-    w.WriteComment(" UDP port the tracker sends OpenTrack packets to.");
-    w.WriteInt("Port", kPort);
-    w.WriteComment(" How old the newest packet may be before the view holds its last pose.");
-    w.WriteInt("DataFreshnessMs", kDataFreshnessMs);
-    w.WriteComment(" Yaw mode: true = horizon-locked (default), false = camera-local.");
-    w.WriteBool("WorldSpaceYaw", kWorldSpaceYaw);
-    w.WriteComment(" Move the crosshair onto where the shot actually lands. With this off the");
-    w.WriteComment(" game's own centre-screen crosshair is left alone and will not match.");
-    w.WriteBool("ShowReticle", kShowReticle);
-    w.WriteBlankLine();
-    w.WriteSection("Smoothing");
-    w.WriteComment(" 0.0 (responsive) - 1.0 (heavy). Covers rotation and position.");
-    w.WriteComment(" LocalSmoothing applies to a tracker sending to 127.0.0.1 on this PC;");
-    w.WriteComment(" RemoteSmoothing applies to any other address, including this PC's own");
-    w.WriteComment(" network address and a phone on your network.");
-    w.WriteDouble("LocalSmoothing", kLocalSmoothing);
-    w.WriteDouble("RemoteSmoothing", kRemoteSmoothing);
-    w.WriteBlankLine();
-    w.WriteSection("Position");
-    w.WriteComment(" 6DOF positional tracking, in metres. The pose is used at 1:1; shape it in");
-    w.WriteComment(" your tracker. LimitY bounds travel up and LimitYDown down; LimitZ bounds");
-    w.WriteComment(" leaning toward the screen and LimitZBack leaning away from it.");
-    w.WriteBool("Enabled", kPositionEnabled);
-    w.WriteDouble("LimitX", kPosLimitX);
-    w.WriteDouble("LimitY", kPosLimitY);
-    w.WriteDouble("LimitYDown", kPosLimitYDown);
-    w.WriteDouble("LimitZ", kPosLimitZ);
-    w.WriteDouble("LimitZBack", kPosLimitZBack);
-    w.WriteBlankLine();
-    w.WriteSection("Collision");
-    w.WriteComment(" Stop a lean at walls and props instead of pushing the view through them.");
-    w.WriteBool("CollisionEnabled", kCollisionEnabled);
-    w.WriteComment(" How far the leaned view is held off a surface, in metres.");
-    w.WriteDouble("CollisionRadius", kCollisionRadius);
-    w.WriteComment(" How gently a lean opens back up once an obstruction clears (0.0 - 1.0).");
-    w.WriteDouble("CollisionReleaseSmoothing", kCollisionReleaseSmoothing);
-    w.WriteBlankLine();
-    w.WriteSection("Diagnostics");
-    w.WriteComment(" Writes a detailed trace to the log twice a second, and takes a screenshot");
-    w.WriteComment(" through the game's own renderer whenever a file named");
-    w.WriteComment(" DyingLightHeadTracking.shot appears next to this one. For troubleshooting;");
-    w.WriteComment(" it makes the log grow quickly.");
-    w.WriteBool("Verbose", kVerbose);
-    w.WriteComment(" Applies the head pose even where the mod would normally stand down - the");
-    w.WriteComment(" front end, a pause, a cutscene. It exists to prove the camera hook works");
-    w.WriteComment(" at all on a machine where getting into gameplay is awkward, and it is NOT");
-    w.WriteComment(" a way to have head tracking in menus: leave it off to play.");
-    w.WriteBool("IgnoreGameplayGate", kIgnoreGameplayGate);
-    w.WriteBlankLine();
-    w.WriteSection("Hotkeys");
-    w.WriteComment(" Virtual-key codes. End = toggle, Page Up = cycle tracking mode,");
-    w.WriteComment(" Page Down = yaw mode, Insert = crosshair compensation.");
-    w.WriteHex("Toggle", kVkToggle);
-    w.WriteHex("CycleMode", kVkCycleMode);
-    w.WriteHex("YawMode", kVkYawMode);
-    w.WriteHex("Reticle", kVkReticle);
-    w.WriteComment(" Chord alternatives: Ctrl+Shift+Y / G / H / U for the same four actions.");
-    w.WriteBool("ChordToggle", kChord);
-    w.WriteBool("ChordCycleMode", kChord);
-    w.WriteBool("ChordYawMode", kChord);
-    w.WriteBool("ChordReticle", kChord);
-    w.Close();
-    return true;
+
+    legacy::Config c;
+    const legacy::ReadResult read = c.Read(ansiPath.c_str());
+    if (read.status == legacy::ReadStatus::Refused) {
+        return ImportResult::Refused(read.reason);
+    }
+
+    std::vector<DroppedValue> dropped;
+
+    out.enable_on_startup = c.enabled_on_startup;
+    out.udp_port = c.udp_port;
+    out.data_freshness_ms = c.data_freshness_ms;
+    out.world_space_yaw = c.world_space_yaw;
+
+    // [Position] Enabled chose only the startup mode: the cycle key reached every mode either
+    // way.
+    const cameraunlock::TrackingModeChannels mode = cameraunlock::EncodeTrackingMode(
+        c.position_enabled ? cameraunlock::TrackingMode::RotationAndPosition
+                           : cameraunlock::TrackingMode::RotationOnly);
+    out.rotation_enabled = mode.rotation_enabled;
+    out.position_enabled = mode.position_enabled;
+
+    out.local_smoothing = c.local_smoothing;
+    out.position.local_smoothing = c.local_smoothing;
+    out.remote_smoothing = c.remote_smoothing;
+    out.position.remote_smoothing = c.remote_smoothing;
+
+    out.position.limit_x = c.pos_limit_x;
+    out.position.limit_y = c.pos_limit_y;
+    out.position.limit_y_down = c.pos_limit_y_down;
+    out.position.limit_z = c.pos_limit_z;
+    out.position.limit_z_back = c.pos_limit_z_back;
+
+    // The lean clamp shipped switched off pending verification, so it takes the table's default
+    // (approved change follows_default).
+    out.collision_enabled = MakeConfigTable().defaults().collision_enabled;
+    if (c.collision_enabled != out.collision_enabled) {
+        dropped.push_back({DropRule::FollowsDefault, "Collision", "CollisionEnabled", c.collision_enabled ? "1" : "0"});
+    }
+    out.lean_clamp.skin = c.collision_radius;
+    out.lean_clamp.release_smoothing = c.collision_release_smoothing;
+
+    out.verbose = c.verbose;
+    out.ignore_gameplay_gate = c.ignore_gameplay_gate;
+
+    // The game's crosshair now always follows the aim, so the switch that left it at the centre
+    // and the key that toggled it are gone (approved change reticle). v0.1.0 registered the key
+    // for any nonzero code the reader passed, and the chord whenever its switch was on.
+    if (!c.show_reticle) dropped.push_back({DropRule::Reticle, "General", "ShowReticle", "0"});
+    if (c.vk_reticle != 0) dropped.push_back({DropRule::Reticle, "Hotkeys", "Reticle", HexCode(c.vk_reticle)});
+    if (c.chord_reticle) dropped.push_back({DropRule::Reticle, "Hotkeys", "ChordReticle", "1"});
+
+    out.toggle_key_name = KeyList(c.vk_toggle, c.chord_toggle, 'Y', "Toggle", dropped);
+    out.cycle_tracking_mode_key_name = KeyList(c.vk_cycle_mode, c.chord_cycle_mode, 'G', "CycleMode", dropped);
+    out.yaw_mode_key_name = KeyList(c.vk_yaw_mode, c.chord_yaw_mode, 'H', "YawMode", dropped);
+
+    return read.status == legacy::ReadStatus::Absent ? ImportResult::Absent(std::move(dropped))
+                                                     : ImportResult::Imported(std::move(dropped));
 }
 
 }  // namespace
 
-bool Config::LoadOrCreate(const char* iniPath) {
-    if (!FileExists(iniPath) && !WriteDefaultIni(iniPath)) {
-        return false;
-    }
+cameraunlock::config::ConfigTable<Config> MakeConfigTable() {
+    using cameraunlock::config::schema::Concept;
+    cameraunlock::config::ConfigTable<Config> table = cameraunlock::config::HeadTrackingConfigTable<Config>(
+        {Concept::UdpPort, Concept::EnableOnStartup, Concept::WorldSpaceYaw, Concept::RotationEnabled,
+         Concept::DataFreshnessMs, Concept::LocalSmoothing, Concept::RemoteSmoothing, Concept::PositionEnabled,
+         Concept::PositionLimitX, Concept::PositionLimitY, Concept::PositionLimitYDown, Concept::PositionLimitZ,
+         Concept::PositionLimitZBack, Concept::CollisionEnabled, Concept::CollisionMargin,
+         Concept::CollisionReleaseSmoothing, Concept::ToggleKey, Concept::CycleTrackingModeKey,
+         Concept::YawModeKey});
+    table.Select(Concept::WorldSpaceYaw).Writable()
+        .Select(Concept::RotationEnabled).Writable()
+        .Select(Concept::PositionEnabled).Writable();
+    table.Select(Concept::CollisionMargin)
+        .Comment("How far, in metres, the view is held off a wall when you lean into it.");
+    table.Local("Diagnostics", "Verbose", &Config::verbose, cameraunlock::config::BoolCodec(),
+                "true: write a detailed trace to the log twice a second, and take a screenshot through\n"
+                "the game's own renderer whenever a file named DyingLightHeadTracking.shot appears next\n"
+                "to this one. For troubleshooting; it makes the log grow quickly.");
+    table.Local("Diagnostics", "IgnoreGameplayGate", &Config::ignore_gameplay_gate,
+                cameraunlock::config::BoolCodec(),
+                "true: apply the head pose even where the mod would normally stand down: the front end,\n"
+                "a pause, a cutscene. It exists to prove the camera hook works on a machine where getting\n"
+                "into gameplay is awkward, and it is not a way to have head tracking in menus. Leave it\n"
+                "false to play.");
+    return table;
+}
 
-    legacy::Config c;
-    const legacy::ReadResult read = c.Read(iniPath);
-    if (read.status == legacy::ReadStatus::Absent) {
-        Log::Line("ERROR: Failed to open INI: %s", iniPath);
-        return false;
-    }
-    if (read.status == legacy::ReadStatus::Refused) {
-        return false;
-    }
+cameraunlock::config::LegacyImport<Config> MakeLegacyImport() {
+    return {&Import, legacy::ReadKeys()};
+}
 
-    enabled_on_startup = c.enabled_on_startup;
-    udp_port = c.udp_port;
-    data_freshness_ms = c.data_freshness_ms;
-    world_space_yaw = c.world_space_yaw;
-    show_reticle = c.show_reticle;
-    local_smoothing = c.local_smoothing;
-    remote_smoothing = c.remote_smoothing;
-    position_enabled = c.position_enabled;
-    pos_limit_x = c.pos_limit_x;
-    pos_limit_y = c.pos_limit_y;
-    pos_limit_y_down = c.pos_limit_y_down;
-    pos_limit_z = c.pos_limit_z;
-    pos_limit_z_back = c.pos_limit_z_back;
-    verbose = c.verbose;
-    ignore_gameplay_gate = c.ignore_gameplay_gate;
-    collision_enabled = c.collision_enabled;
-    collision_radius = c.collision_radius;
-    collision_release_smoothing = c.collision_release_smoothing;
-    vk_toggle = c.vk_toggle;
-    vk_cycle_mode = c.vk_cycle_mode;
-    vk_yaw_mode = c.vk_yaw_mode;
-    vk_reticle = c.vk_reticle;
-    chord_toggle = c.chord_toggle;
-    chord_cycle_mode = c.chord_cycle_mode;
-    chord_yaw_mode = c.chord_yaw_mode;
-    chord_reticle = c.chord_reticle;
-    return true;
+cameraunlock::config::ConfigOwnerOptions<Config> MakeConfigOwnerOptions(const std::wstring& folder,
+                                                                        cameraunlock::config::DefaultsFile defaults) {
+    const auto wide = [](const char* name) { return std::wstring(name, name + std::char_traits<char>::length(name)); };
+    cameraunlock::config::ConfigOwnerOptions<Config> options;
+    options.path = folder + wide(kConfigFileName);
+    options.legacy_path = folder + wide(kLegacyConfigFileName);
+    options.table = MakeConfigTable();
+    options.import = MakeLegacyImport();
+    options.header.display_name = kConfigDisplayName;
+    options.defaults = std::move(defaults);
+    return options;
 }
 
 }  // namespace DyingLightHeadTracking
