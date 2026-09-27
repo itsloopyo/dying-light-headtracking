@@ -81,6 +81,8 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     follows.Setting(Concept::CycleTrackingModeKey,
                     c.vk_cycle_mode == shipped.vk_cycle_mode && c.chord_cycle_mode == shipped.chord_cycle_mode);
     follows.Setting(Concept::YawModeKey, c.vk_yaw_mode == shipped.vk_yaw_mode && c.chord_yaw_mode == shipped.chord_yaw_mode);
+    follows.NotInLegacy(Concept::TrueFreeLook);
+    follows.NotInLegacy(Concept::TrueFreeLookKey);
 
     out.enable_on_startup = c.enabled_on_startup;
     out.udp_port = c.udp_port;
@@ -144,11 +146,12 @@ cameraunlock::config::ConfigTable<Config> MakeConfigTable() {
          Concept::DataFreshnessMs, Concept::LocalSmoothing, Concept::RemoteSmoothing, Concept::PositionEnabled,
          Concept::PositionLimitX, Concept::PositionLimitY, Concept::PositionLimitYDown, Concept::PositionLimitZ,
          Concept::PositionLimitZBack, Concept::CollisionEnabled, Concept::CollisionMargin,
-         Concept::CollisionReleaseSmoothing, Concept::ToggleKey, Concept::CycleTrackingModeKey,
-         Concept::YawModeKey});
+         Concept::CollisionReleaseSmoothing, Concept::TrueFreeLook, Concept::ToggleKey,
+         Concept::CycleTrackingModeKey, Concept::YawModeKey, Concept::TrueFreeLookKey});
     table.Select(Concept::WorldSpaceYaw).Writable()
         .Select(Concept::RotationEnabled).Writable()
-        .Select(Concept::PositionEnabled).Writable();
+        .Select(Concept::PositionEnabled).Writable()
+        .Select(Concept::TrueFreeLook).Writable();
     table.Select(Concept::CollisionMargin)
         .Comment("How far, in metres, the view is held off a wall when you lean into it.");
     table.Local("Diagnostics", "Verbose", &Config::verbose, cameraunlock::config::BoolCodec(),

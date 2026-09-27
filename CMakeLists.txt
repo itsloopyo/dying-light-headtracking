@@ -71,6 +71,7 @@ add_executable(dlht_tests
     tests/aim_projection_tests.cpp
     tests/gate_rules_tests.cpp
     tests/config_sanitize_tests.cpp
+    tests/aim_lean_tests.cpp
 )
 target_include_directories(dlht_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 target_link_libraries(dlht_tests PRIVATE cameraunlock)

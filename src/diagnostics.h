@@ -11,6 +11,8 @@ namespace DyingLightHeadTracking::diagnostics {
 // nobody is reading.
 struct FrameTrace {
     bool posed = false;
+    // The game's aim zoom is narrowing the view this frame.
+    bool aiming = false;
     const char* gate = "";
     bool multiplayer = false;
     unsigned int peers = 0;

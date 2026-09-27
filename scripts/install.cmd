@@ -42,7 +42,7 @@ set "MOD_SEED_FILES="
 :: omit the field. Bump alongside vendor/ via `pixi run update-deps`.
 set "ASI_LOADER_VERSION=9.7.4"
 :: Post-install help text. `&echo ` starts each further line.
-set "MOD_CONTROLS=Controls:&echo   End       - Toggle head tracking on/off&echo   Page Up   - Cycle tracking mode (full / rotation only / position only)&echo   Page Down - Toggle yaw mode (camera-local / horizon-locked)&echo   Ctrl+Shift+Y / G / H - the same three actions&echo   Keys are set in CameraUnlock.ini beside the game exe"
+set "MOD_CONTROLS=Controls:&echo   End       - Toggle head tracking on/off&echo   Page Up   - Cycle tracking mode (full / rotation only / position only)&echo   Page Down - Toggle yaw mode (camera-local / horizon-locked)&echo   Insert    - Toggle true free look (sights locked / true free look)&echo   Ctrl+Shift+Y / G / H / U - the same four actions&echo   Keys are set in CameraUnlock.ini beside the game exe"
 :: --- END CONFIG BLOCK ---
 
 :: Pin delayed expansion off before `%*` is expanded on the `call` below.

@@ -35,8 +35,8 @@ void TraceLine() {
         t = g_latest;
     }
 
-    Log::Line("trace gate=%s%s posed=%d | pose yaw %.2f pitch %.2f roll %.2f | lean R %.3f U %.3f F %.3f",
-              t.gate, t.multiplayer ? " (networked)" : "", t.posed ? 1 : 0,
+    Log::Line("trace gate=%s%s posed=%d aiming=%d | pose yaw %.2f pitch %.2f roll %.2f | lean R %.3f U %.3f F %.3f",
+              t.gate, t.multiplayer ? " (networked)" : "", t.posed ? 1 : 0, t.aiming ? 1 : 0,
               static_cast<double>(t.pose.yaw_right), static_cast<double>(t.pose.pitch_up),
               static_cast<double>(t.pose.roll_ccw), static_cast<double>(t.pose.right),
               static_cast<double>(t.pose.up), static_cast<double>(t.pose.forward));

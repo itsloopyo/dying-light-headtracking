@@ -79,6 +79,11 @@ void ToggleYawModeAndSave() {
     LogSave(g_configOwner->Save([worldSpace](Config& c) { c.world_space_yaw = worldSpace; }));
 }
 
+void ToggleTrueFreeLookAndSave() {
+    const bool trueFreeLook = g_tracking.ToggleTrueFreeLook();
+    LogSave(g_configOwner->Save([trueFreeLook](Config& c) { c.true_free_look = trueFreeLook; }));
+}
+
 bool SleepUnlessUnloading(int ms) {
     return WaitForSingleObject(g_shutdownEvent, static_cast<DWORD>(ms)) == WAIT_TIMEOUT;
 }
@@ -209,11 +214,11 @@ unsigned InitThreadBody() {
     }
     const Config& cfg = loaded.config;
     Log::Line("Config: port=%d enabled=%d smoothing local %.2f / remote %.2f rotation=%d "
-              "position=%d worldyaw=%d collision=%d margin %.2f verbose=%d",
+              "position=%d worldyaw=%d truefreelook=%d collision=%d margin %.2f verbose=%d",
               cfg.udp_port, cfg.enable_on_startup, static_cast<double>(cfg.local_smoothing),
               static_cast<double>(cfg.remote_smoothing), cfg.rotation_enabled, cfg.position_enabled,
-              cfg.world_space_yaw, cfg.collision_enabled, static_cast<double>(cfg.lean_clamp.skin),
-              cfg.verbose);
+              cfg.world_space_yaw, cfg.true_free_look, cfg.collision_enabled,
+              static_cast<double>(cfg.lean_clamp.skin), cfg.verbose);
 
     const MH_STATUS mh = MH_Initialize();
     if (mh != MH_OK) {
@@ -224,7 +229,7 @@ unsigned InitThreadBody() {
 
     g_tracking.Start(cfg);
     if (!g_hotkeys.Start(cfg, [] { g_tracking.ToggleEnabled(); }, [] { CycleTrackingModeAndSave(); },
-                         [] { ToggleYawModeAndSave(); })) {
+                         [] { ToggleYawModeAndSave(); }, [] { ToggleTrueFreeLookAndSave(); })) {
         g_tracking.Stop();
         return 1;
     }

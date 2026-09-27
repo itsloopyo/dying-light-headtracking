@@ -30,8 +30,9 @@ struct Config : cameraunlock::HeadTrackingConfig {
     Config() { lean_clamp.skin = kCollisionMarginMetres; }
 };
 
-// The rows of CameraUnlock.ini. Only the tracking mode pair and WorldSpaceYaw are Writable: the
-// mode and yaw hotkeys save the player's choice, and End changes the session only.
+// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and TrueFreeLook are
+// Writable: the mode, yaw and free-look hotkeys save the player's choice, and End changes the
+// session only.
 cameraunlock::config::ConfigTable<Config> MakeConfigTable();
 
 // DyingLightHeadTracking.ini as v0.1.0 read it (legacy_config/), mapped into Config.

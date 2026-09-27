@@ -1,8 +1,8 @@
 // CameraUnlock.ini and what the conversion moved into code: the committed file is the table's
 // fresh render, the defaults v0.1.0 ran on map to the defaults, a first start creates the
-// committed file, the toggles save only their own lines and leave Defaults.ini and
-// DyingLightHeadTracking.ini alone, End's row cannot be saved, and the import finds
-// DyingLightHeadTracking.ini by the ANSI path v0.1.0 opened it by.
+// committed file, a stray ads_mode line leaves true free look off, the toggles save only their
+// own lines and leave Defaults.ini and DyingLightHeadTracking.ini alone, End's row cannot be
+// saved, and the import finds DyingLightHeadTracking.ini by the ANSI path v0.1.0 opened it by.
 //
 // `--render-config <path>` writes the committed file instead (pixi run render-config).
 
@@ -121,6 +121,8 @@ void TestFirstStartCreatesTheCommittedFile() {
     Check(AllValues(loaded.config) == AllValues(table.defaults()), "a first start runs on the built-in values");
     Check(loaded.config.collision_enabled, "the lean clamp starts on");
     Check(loaded.config.lean_clamp.skin == kCollisionMarginMetres, "the lean clamp keeps this game's 0.15 m margin");
+    Check(!loaded.config.true_free_look, "true free look starts off, so a lean keeps the eye on the sights");
+    Check(loaded.config.true_free_look_key_name == "Insert, Ctrl+Shift+U", "Insert and Ctrl+Shift+U toggle true free look");
 }
 
 // A fresh install and an upgrade from v0.1.0's defaults start the same: the map of the frozen
@@ -147,7 +149,7 @@ void TestLegacyDefaultsMapToTheDefaults() {
           "the old defaults drop [Collision] CollisionEnabled=0, which follows the default now, and the "
           "crosshair key and its chord");
     Check(result.pose_shaping.empty(), "v0.1.0 read no sensitivity, inversion or scale");
-    Check(result.follows_defaults_ini.size() == 18,
+    Check(result.follows_defaults_ini.size() == 20,
           "every row but CollisionMargin is untouched in the old defaults and follows Defaults.ini");
     Check(AllValues(mapped) == AllValues(table.defaults()), "the old defaults map to the defaults");
     Check(mapped.toggle_key_name == "End, Ctrl+Shift+Y" && mapped.cycle_tracking_mode_key_name == "PageUp, Ctrl+Shift+G" &&
@@ -234,8 +236,14 @@ void TestTogglesSave() {
                   std::vector<std::string>{"RotationEnabled=false", "PositionEnabled=true"},
               "saving position only changes the mode pair and nothing else");
 
+        Check(owner.Save([](Config& c) { c.true_free_look = true; }).status == cfg::ConfigSaveStatus::Saved,
+              "true free look saves");
+        const std::string afterFreeLook = ReadBytes(s.ConfigPath());
+        Check(ChangedLines(afterPositionOnly, afterFreeLook) == std::vector<std::string>{"TrueFreeLook=true"},
+              "saving true free look writes its value over default and changes nothing else");
+
         Check(owner.Save([](Config&) {}).status == cfg::ConfigSaveStatus::Saved, "an empty save succeeds");
-        Check(ReadBytes(s.ConfigPath()) == afterPositionOnly, "an empty save writes nothing");
+        Check(ReadBytes(s.ConfigPath()) == afterFreeLook, "an empty save writes nothing");
 
         bool refused = false;
         try {
@@ -244,7 +252,7 @@ void TestTogglesSave() {
             refused = true;
         }
         Check(refused, "EnableOnStartup is not Writable, so the End toggle cannot persist");
-        Check(ReadBytes(s.ConfigPath()) == afterPositionOnly, "a refused save writes nothing");
+        Check(ReadBytes(s.ConfigPath()) == afterFreeLook, "a refused save writes nothing");
 
         Check(ReadBytes(s.defaults) == defaultsBefore, "saving leaves Defaults.ini as it was");
         Check(ReadBytes(s.LegacyPath()) == legacyBytes, "saving leaves DyingLightHeadTracking.ini as it was");
@@ -252,10 +260,27 @@ void TestTogglesSave() {
 
     const auto again = cfg::ConfigOwner<Config>(s.Options()).Load();
     Check(again.status == cfg::ConfigLoadStatus::Canonical && again.diagnostics.empty() && !again.config.world_space_yaw &&
-              !again.config.rotation_enabled && again.config.position_enabled && again.config.enable_on_startup,
-          "the saved yaw and tracking mode come back at the next start");
+              !again.config.rotation_enabled && again.config.position_enabled && again.config.enable_on_startup &&
+              again.config.true_free_look,
+          "the saved yaw, tracking mode and true free look come back at the next start");
     Check((Listing(s.game) == std::vector<std::string>{"CameraUnlock.ini", kLegacyConfigFileName}),
           "the game folder holds CameraUnlock.ini and DyingLightHeadTracking.ini and nothing else");
+}
+
+// The retired ADS cycle's ads_mode is not a row of this table. A file that still carries one
+// loads with true free look off: tracked was not free look, so its value is never carried over.
+void TestAnAdsModeLineLoadsWithFreeLookOff() {
+    const Scratch s(L"ads-mode");
+    std::string bytes = Committed();
+    const std::string anchor = "[Position]\r\n";
+    const size_t at = bytes.find(anchor);
+    Check(at != std::string::npos, "the committed file has a [Position] section");
+    bytes.insert(at + anchor.size(), "ads_mode=tracked\r\n");
+    WriteBytes(s.ConfigPath(), bytes);
+    const auto loaded = cfg::ConfigOwner<Config>(s.Options()).Load();
+    Check(loaded.status == cfg::ConfigLoadStatus::Canonical, "a file carrying ads_mode still loads");
+    Check(!loaded.config.true_free_look, "ads_mode=tracked does not turn true free look on");
+    Check(!loaded.diagnostics.empty(), "the stray ads_mode line draws a diagnostic naming it");
 }
 
 // v0.1.0 opened its file by an ANSI path it built itself, falling back to the
@@ -295,6 +320,7 @@ int main(int argc, char** argv) {
         TestLegacyDefaultsMapToTheDefaults();
         TestFirstStartCreatesTheCommittedFile();
         TestTogglesSave();
+        TestAnAdsModeLineLoadsWithFreeLookOff();
         TestAFolderTheCodepageCannotNameImportsAsThePublishedBuildReadIt();
     } catch (const std::exception& e) {
         std::printf("FAIL: %s\n", e.what());

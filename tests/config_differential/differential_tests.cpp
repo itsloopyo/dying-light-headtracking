@@ -504,6 +504,7 @@ const std::set<Concept>& AllFollowingRows() {
         Concept::PositionLimitY,   Concept::PositionLimitYDown,   Concept::PositionLimitZ,
         Concept::PositionLimitZBack, Concept::CollisionEnabled,   Concept::CollisionReleaseSmoothing,
         Concept::ToggleKey,        Concept::CycleTrackingModeKey, Concept::YawModeKey,
+        Concept::TrueFreeLook,     Concept::TrueFreeLookKey,
     };
     return all;
 }
@@ -531,6 +532,9 @@ std::set<Concept> UntouchedRows(const legacy::Config& l) {
     row(Concept::ToggleKey, l.vk_toggle == s.vk_toggle && l.chord_toggle == s.chord_toggle);
     row(Concept::CycleTrackingModeKey, l.vk_cycle_mode == s.vk_cycle_mode && l.chord_cycle_mode == s.chord_cycle_mode);
     row(Concept::YawModeKey, l.vk_yaw_mode == s.vk_yaw_mode && l.chord_yaw_mode == s.chord_yaw_mode);
+    // v0.1.0 had no true free look, so no player can have changed it.
+    row(Concept::TrueFreeLook, true);
+    row(Concept::TrueFreeLookKey, true);
     return u;
 }
 

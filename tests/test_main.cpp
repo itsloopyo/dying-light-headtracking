@@ -4,6 +4,7 @@ int RunViewPoseTests();
 int RunAimProjectionTests();
 int RunGateRulesTests();
 int RunConfigSanitizeTests();
+int RunAimLeanTests();
 
 int main() {
     std::printf("DyingLightHeadTracking tests\n");
@@ -13,6 +14,7 @@ int main() {
     failures += RunAimProjectionTests();
     failures += RunGateRulesTests();
     failures += RunConfigSanitizeTests();
+    failures += RunAimLeanTests();
 
     if (failures == 0) {
         std::printf("All tests passed\n");

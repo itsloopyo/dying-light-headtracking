@@ -26,7 +26,8 @@ std::vector<cameraunlock::input::KeyBinding> Parse(const std::string& list) {
 
 }  // namespace
 
-bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode) {
+bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode,
+                    Action onTrueFreeLook) {
     if (m_started.load(std::memory_order_acquire)) return true;
 
     // One registration per key: a binding without modifiers stays quiet while Ctrl and Shift
@@ -36,6 +37,7 @@ bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode, Acti
     RegisterKeyBindings(m_poller, Parse(cfg.toggle_key_name), std::move(onToggle));
     RegisterKeyBindings(m_poller, Parse(cfg.cycle_tracking_mode_key_name), std::move(onCycleMode));
     RegisterKeyBindings(m_poller, Parse(cfg.yaw_mode_key_name), std::move(onYawMode));
+    RegisterKeyBindings(m_poller, Parse(cfg.true_free_look_key_name), std::move(onTrueFreeLook));
 
     // Reached from a __stdcall thread procedure, where an escaping exception is
     // std::terminate and the game would vanish with the reason unwritten.
@@ -49,8 +51,9 @@ bool Hotkeys::Start(const Config& cfg, Action onToggle, Action onCycleMode, Acti
         return false;
     }
 
-    Log::Line("Hotkeys: toggle=[%s] cycle mode=[%s] yaw mode=[%s]", cfg.toggle_key_name.c_str(),
-              cfg.cycle_tracking_mode_key_name.c_str(), cfg.yaw_mode_key_name.c_str());
+    Log::Line("Hotkeys: toggle=[%s] cycle mode=[%s] yaw mode=[%s] true free look=[%s]",
+              cfg.toggle_key_name.c_str(), cfg.cycle_tracking_mode_key_name.c_str(),
+              cfg.yaw_mode_key_name.c_str(), cfg.true_free_look_key_name.c_str());
 
     m_started.store(true, std::memory_order_release);
     return true;

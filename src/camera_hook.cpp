@@ -1,5 +1,6 @@
 #include "camera_hook.h"
 
+#include "aim_lean.h"
 #include "aim_projection.h"
 #include "diagnostics.h"
 #include "engine_api.h"
@@ -45,6 +46,13 @@ constexpr float kMaxLeanDtSec = 0.25f;
 
 constexpr float kRadToDeg = 57.2957795f;
 
+// The game eases the field of view in over the first seconds of a level (45 deg
+// up to the default 52 on this build) and nudges it while walking, so the zoom
+// line waits for the live value to hold still this many frames. A line taken
+// during that ease reads well below 1.0 for a camera that settles at 1.0000.
+constexpr int kSteadyFramesForZoomLog = 60;
+constexpr float kSteadyTangentDelta = 1e-5f;
+
 // A posed frame with no aim trace to read is normal for the first frames of a
 // level. This many in a row is the game having stopped making it, which is
 // worth one log line.
@@ -61,6 +69,7 @@ bool g_calibrated = false;
 const engine::Level* g_lastLevel = nullptr;
 
 cameraunlock::camera::LeanClamp g_leanClamp;
+AimLean g_aimLean;
 lean_trace::Context g_leanContext;
 
 std::atomic<unsigned long long> g_updates{0};
@@ -77,6 +86,8 @@ FrameSample g_frameSample;
 bool g_loggedBasis = false;
 bool g_loggedTangents = false;
 bool g_loggedZoomBasis = false;
+float g_lastLiveTangent = 0.0f;
+int g_steadyZoomFrames = 0;
 bool g_loggedNoZoomReference = false;
 int g_missingAimFrames = 0;
 bool g_loggedNoQuery = false;
@@ -129,8 +140,8 @@ void LogTangents(const FrameTangents& t, engine::Camera* cam) {
 }
 
 // How much the head pose is scaled so it moves the picture as far as it would
-// at the game's un-zoomed FOV. Exactly 1.0 in ordinary play; below 1.0 in a
-// cutscene or aim zoom; a little above it while sprinting widens the view.
+// at the game's un-zoomed FOV. 1.0 standing still in ordinary play; below 1.0 in
+// a cutscene or aim zoom; a little above it while sprinting widens the view.
 //
 // Both tangents are vertical: the live one is the projection's own element 5,
 // and CameraDefaultFOV is on the axis GetFOV reports, which the first-frame
@@ -149,6 +160,11 @@ float ZoomFactor(const FrameTangents& t) {
     const float factor = cameraunlock::camera::FovZoomFactor(t.tan_half_v, tanBase);
     const float liveDeg = 2.0f * std::atan(t.tan_half_v) * kRadToDeg;
     if (!g_loggedZoomBasis) {
+        g_steadyZoomFrames =
+            std::fabs(t.tan_half_v - g_lastLiveTangent) < kSteadyTangentDelta ? g_steadyZoomFrames + 1 : 0;
+        g_lastLiveTangent = t.tan_half_v;
+    }
+    if (!g_loggedZoomBasis && g_steadyZoomFrames >= kSteadyFramesForZoomLog) {
         g_loggedZoomBasis = true;
         Log::Line("Zoom compensation: live vertical FOV %.2f deg (projection element 5), "
                   "un-zoomed CameraDefaultFOV %.2f deg (vertical, degrees), factor %.4f",
@@ -199,9 +215,11 @@ void HideReticle() {
 
 // A frame that applies no head pose, so the game's crosshair goes back to where
 // the game put it. The clamp is dropped too, or it carries the previous room's
-// wall into whatever the next lean is taken against.
+// wall into whatever the next lean is taken against, and the aim fade, so the
+// next aim starts from the hip.
 void StandDown(const diagnostics::FrameTrace& trace) {
     g_leanClamp.Reset();
+    g_aimLean.Reset();
     hud_crosshair::PublishCentred();
     flashlight::PublishView(trace.clean, trace.clean);
     g_haveLastAim = false;
@@ -361,7 +379,12 @@ void Detour(engine::Camera* thiz, const engine::Vec3* forward, const engine::Vec
 
     // Scaled before the camera write, so the rendered basis, the lean clamp and
     // the reticle projection all describe the camera the player looks through.
-    const EnginePose pose = ScalePoseForZoom(PoseFromSample(sample), zoom);
+    // The sights are polled last, once the gate and the tracker have both said
+    // this frame is posed.
+    const bool aiming = IsAimZoom(zoom);
+    trace.aiming = aiming;
+    const EnginePose pose = g_aimLean.Apply(ScalePoseForZoom(PoseFromSample(sample), zoom), aiming,
+                                            g_tracking->IsTrueFreeLook(), now / 1000);
 
     ViewBasis rendered = ApplyHeadRotation(clean, pose, g_tracking->IsWorldSpaceYaw());
 

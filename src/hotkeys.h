@@ -14,7 +14,8 @@ public:
     using Action = std::function<void()>;
 
     // Registers each action on every key its list in the config names.
-    bool Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode);
+    bool Start(const Config& cfg, Action onToggle, Action onCycleMode, Action onYawMode,
+               Action onTrueFreeLook);
     void Stop();
 
 private:

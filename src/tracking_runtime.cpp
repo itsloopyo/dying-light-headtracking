@@ -26,6 +26,7 @@ void TrackingRuntime::Start(const Config& cfg) {
 
     m_enabled.store(m_cfg.enable_on_startup, std::memory_order_relaxed);
     m_worldSpaceYaw.store(m_cfg.world_space_yaw, std::memory_order_relaxed);
+    m_trueFreeLook.store(m_cfg.true_free_look, std::memory_order_relaxed);
     // The table never loads a pair that names no mode: it reads both as their defaults
     // instead.
     m_session.SetMode(
@@ -79,6 +80,13 @@ bool TrackingRuntime::ToggleYawMode() {
     const bool prev = m_worldSpaceYaw.load(std::memory_order_relaxed);
     m_worldSpaceYaw.store(!prev, std::memory_order_relaxed);
     Log::Line("Yaw mode: %s", !prev ? "world-space (horizon-locked)" : "camera-local");
+    return !prev;
+}
+
+bool TrackingRuntime::ToggleTrueFreeLook() {
+    const bool prev = m_trueFreeLook.load(std::memory_order_relaxed);
+    m_trueFreeLook.store(!prev, std::memory_order_relaxed);
+    Log::Line("True free look: %s", !prev ? "ON" : "OFF (sights locked)");
     return !prev;
 }
 
