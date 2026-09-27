@@ -23,14 +23,16 @@ using cameraunlock::config::LegacyInput;
 using cameraunlock::input::KeyBinding;
 using cameraunlock::input::KeyModifiers;
 
-// A legacy hotkey code and its Ctrl+Shift chord switch as one key list: the code's binding when
-// it is a key code, then the chord.
+// A legacy hotkey code and its Ctrl+Shift chord switch as one key list: what core gives for the
+// code, then the chord.
 std::string KeyList(int vk, bool chord, char letter, const char* key, std::vector<DroppedValue>& dropped) {
-    cameraunlock::config::LegacyVirtualKeyToBindings(vk, "Hotkeys", key, dropped);
-    std::vector<KeyBinding> bindings;
-    if (vk >= 0x01 && vk <= 0xFE) bindings.push_back({KeyModifiers::kNone, vk});
-    if (chord) bindings.push_back({KeyModifiers::kCtrl | KeyModifiers::kShift, letter});
-    return cameraunlock::input::FormatKeyBindings(bindings);
+    std::string list = cameraunlock::config::LegacyVirtualKeyToBindings(vk, "Hotkeys", key, dropped);
+    if (chord) {
+        const std::string chordText =
+            cameraunlock::input::FormatKeyBindings({KeyBinding{KeyModifiers::kCtrl | KeyModifiers::kShift, letter}});
+        list += list.empty() ? chordText : ", " + chordText;
+    }
+    return list;
 }
 
 std::string HexCode(int vk) {
@@ -56,6 +58,29 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     }
 
     std::vector<DroppedValue> dropped;
+    // A setting the player never changed from what v0.1.0 shipped follows Defaults.ini.
+    using cameraunlock::config::schema::Concept;
+    const legacy::Config shipped;
+    cameraunlock::config::LegacyFollowsDefaultsIni follows;
+    follows.Setting(Concept::UdpPort, c.udp_port, shipped.udp_port);
+    follows.Setting(Concept::EnableOnStartup, c.enabled_on_startup, shipped.enabled_on_startup);
+    follows.Setting(Concept::WorldSpaceYaw, c.world_space_yaw, shipped.world_space_yaw);
+    follows.TrackingMode(c.position_enabled, shipped.position_enabled);
+    follows.Setting(Concept::DataFreshnessMs, c.data_freshness_ms, shipped.data_freshness_ms);
+    follows.Setting(Concept::LocalSmoothing, c.local_smoothing, shipped.local_smoothing);
+    follows.Setting(Concept::RemoteSmoothing, c.remote_smoothing, shipped.remote_smoothing);
+    follows.Setting(Concept::PositionLimitX, c.pos_limit_x, shipped.pos_limit_x);
+    follows.Setting(Concept::PositionLimitY, c.pos_limit_y, shipped.pos_limit_y);
+    follows.Setting(Concept::PositionLimitYDown, c.pos_limit_y_down, shipped.pos_limit_y_down);
+    follows.Setting(Concept::PositionLimitZ, c.pos_limit_z, shipped.pos_limit_z);
+    follows.Setting(Concept::PositionLimitZBack, c.pos_limit_z_back, shipped.pos_limit_z_back);
+    follows.Setting(Concept::CollisionEnabled, c.collision_enabled, shipped.collision_enabled);
+    follows.Setting(Concept::CollisionReleaseSmoothing, c.collision_release_smoothing,
+                    shipped.collision_release_smoothing);
+    follows.Setting(Concept::ToggleKey, c.vk_toggle == shipped.vk_toggle && c.chord_toggle == shipped.chord_toggle);
+    follows.Setting(Concept::CycleTrackingModeKey,
+                    c.vk_cycle_mode == shipped.vk_cycle_mode && c.chord_cycle_mode == shipped.chord_cycle_mode);
+    follows.Setting(Concept::YawModeKey, c.vk_yaw_mode == shipped.vk_yaw_mode && c.chord_yaw_mode == shipped.chord_yaw_mode);
 
     out.enable_on_startup = c.enabled_on_startup;
     out.udp_port = c.udp_port;
@@ -82,13 +107,11 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.position.limit_z_back = c.pos_limit_z_back;
 
     // v0.1.0 shipped the lean clamp switched off pending verification, so an off here is the
-    // build's value, not the player's: the row follows Defaults.ini (approved change
+    // build's value, not the player's, and the row follows Defaults.ini (approved change
     // follows_default). An on the player set is carried.
-    std::vector<cameraunlock::config::schema::Concept> follows_defaults_ini;
     out.collision_enabled = MakeConfigTable().defaults().collision_enabled;
     if (c.collision_enabled != out.collision_enabled) {
         dropped.push_back({DropRule::FollowsDefault, "Collision", "CollisionEnabled", c.collision_enabled ? "1" : "0"});
-        follows_defaults_ini.push_back(cameraunlock::config::schema::Concept::CollisionEnabled);
     }
     out.lean_clamp.skin = c.collision_radius;
     out.lean_clamp.release_smoothing = c.collision_release_smoothing;
@@ -108,8 +131,8 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.yaw_mode_key_name = KeyList(c.vk_yaw_mode, c.chord_yaw_mode, 'H', "YawMode", dropped);
 
     return read.status == legacy::ReadStatus::Absent
-               ? ImportResult::Absent(std::move(dropped), {}, std::move(follows_defaults_ini))
-               : ImportResult::Imported(std::move(dropped), {}, std::move(follows_defaults_ini));
+               ? ImportResult::Absent(std::move(dropped), {}, follows.Concepts())
+               : ImportResult::Imported(std::move(dropped), {}, follows.Concepts());
 }
 
 }  // namespace

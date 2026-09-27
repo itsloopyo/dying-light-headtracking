@@ -147,6 +147,8 @@ void TestLegacyDefaultsMapToTheDefaults() {
           "the old defaults drop [Collision] CollisionEnabled=0, which follows the default now, and the "
           "crosshair key and its chord");
     Check(result.pose_shaping.empty(), "v0.1.0 read no sensitivity, inversion or scale");
+    Check(result.follows_defaults_ini.size() == 18,
+          "every row but CollisionMargin is untouched in the old defaults and follows Defaults.ini");
     Check(AllValues(mapped) == AllValues(table.defaults()), "the old defaults map to the defaults");
     Check(mapped.toggle_key_name == "End, Ctrl+Shift+Y" && mapped.cycle_tracking_mode_key_name == "PageUp, Ctrl+Shift+G" &&
               mapped.yaw_mode_key_name == "PageDown, Ctrl+Shift+H",

@@ -16,15 +16,21 @@
 // Comparison 2, import against migration, is the proof for the migration: the settings the mod
 // starts on and the actions every key press fires are the import's, apart from the approved
 // changes, each of which the import must record as dropped. ShowReticle=0, the crosshair key and
-// its chord are dropped (reticle: the game's crosshair always follows the aim now), and
-// [Collision] CollisionEnabled, which shipped off pending verification, follows Defaults.ini
-// where it holds that off (follows_default). v0.1.0 read no sensitivity, inversion or scale, so nothing is
-// dropped as pose shaping. A value the canonical row cannot hold has no approved rule, so the
-// owner defers that import and the session runs on what the import gave (kUnrepresentable).
+// its chord are dropped (reticle: the game's crosshair always follows the aim now), [Collision]
+// CollisionEnabled, which shipped off pending verification, follows Defaults.ini where it holds
+// that off (follows_default), and a hotkey code on a Ctrl, Shift or Alt key alone is unbound while
+// its chord is kept (N3). v0.1.0 read no sensitivity, inversion or scale, so nothing is dropped as
+// pose shaping. A value the canonical row cannot hold has no approved rule, so the owner defers
+// that import and the session runs on what the import gave (kUnrepresentable).
 //
-// Comparison 2 runs twice, once over a Defaults.ini at the built-in values and once over one a
-// player changed, since the migration writes default exactly where the imported value equals
-// what Defaults.ini gives. After every load DyingLightHeadTracking.ini keeps its bytes, its write
+// A row the player never changed from what v0.1.0 shipped follows Defaults.ini: the import lists
+// it in follows_defaults_ini, the tracking mode pair as one unit and each hotkey with its chord
+// switch, and the migration writes it default. The test derives the untouched rows from what the
+// import read and holds the import's list to them on every input.
+//
+// Comparison 2 runs twice, once over a Defaults.ini at the built-in values, which are v0.1.0's
+// defaults apart from CollisionEnabled, and once over one a player changed on every row. Over the
+// second an untouched row takes Defaults.ini's value and a changed row keeps the player's. After every load DyingLightHeadTracking.ini keeps its bytes, its write
 // time and its attributes, Defaults.ini is never written, and the folder holds the legacy file
 // and CameraUnlock.ini and nothing else (the legacy file alone when nothing was imported). The
 // next load reads CameraUnlock.ini, imports nothing and writes nothing, and a read-only legacy
@@ -462,6 +468,116 @@ fs::path g_alteredDefaults;
 // WriteAlteredDefaults writes.
 bool DefaultsCollision(bool builtin) { return builtin && MakeConfigTable().defaults().collision_enabled; }
 
+using cfg::schema::Concept;
+
+// What each Defaults.ini gives the rows that follow it, in v0.1.0's terms: the built-in values,
+// and the corpus alternates WriteAlteredDefaults writes.
+legacy::Config DefaultsIniValues(bool builtin) {
+    legacy::Config d;
+    d.collision_enabled = DefaultsCollision(builtin);
+    if (builtin) return d;
+    d.udp_port = 4243;
+    d.enabled_on_startup = false;
+    d.world_space_yaw = false;
+    d.data_freshness_ms = 250;
+    d.position_enabled = false;
+    d.local_smoothing = 0.3f;
+    d.remote_smoothing = 0.3f;
+    d.pos_limit_x = 0.5f;
+    d.pos_limit_y = 0.5f;
+    d.pos_limit_y_down = 0.5f;
+    d.pos_limit_z = 0.5f;
+    d.pos_limit_z_back = 0.2f;
+    d.collision_release_smoothing = 0.5f;
+    d.vk_toggle = 0x70;
+    d.vk_cycle_mode = 0x71;
+    d.vk_yaw_mode = 0x72;
+    return d;
+}
+
+// Every row of the table that follows Defaults.ini: all but CollisionMargin.
+const std::set<Concept>& AllFollowingRows() {
+    static const std::set<Concept> all = {
+        Concept::UdpPort,          Concept::EnableOnStartup,      Concept::WorldSpaceYaw,
+        Concept::RotationEnabled,  Concept::PositionEnabled,      Concept::DataFreshnessMs,
+        Concept::LocalSmoothing,   Concept::RemoteSmoothing,      Concept::PositionLimitX,
+        Concept::PositionLimitY,   Concept::PositionLimitYDown,   Concept::PositionLimitZ,
+        Concept::PositionLimitZBack, Concept::CollisionEnabled,   Concept::CollisionReleaseSmoothing,
+        Concept::ToggleKey,        Concept::CycleTrackingModeKey, Concept::YawModeKey,
+    };
+    return all;
+}
+
+// The rows whose every legacy setting reads as v0.1.0 shipped it, floats bit for bit.
+std::set<Concept> UntouchedRows(const legacy::Config& l) {
+    const legacy::Config s;
+    std::set<Concept> u;
+    auto row = [&u](Concept id, bool same) { if (same) u.insert(id); };
+    row(Concept::UdpPort, l.udp_port == s.udp_port);
+    row(Concept::EnableOnStartup, l.enabled_on_startup == s.enabled_on_startup);
+    row(Concept::WorldSpaceYaw, l.world_space_yaw == s.world_space_yaw);
+    row(Concept::RotationEnabled, l.position_enabled == s.position_enabled);
+    row(Concept::PositionEnabled, l.position_enabled == s.position_enabled);
+    row(Concept::DataFreshnessMs, l.data_freshness_ms == s.data_freshness_ms);
+    row(Concept::LocalSmoothing, SameBits(l.local_smoothing, s.local_smoothing));
+    row(Concept::RemoteSmoothing, SameBits(l.remote_smoothing, s.remote_smoothing));
+    row(Concept::PositionLimitX, SameBits(l.pos_limit_x, s.pos_limit_x));
+    row(Concept::PositionLimitY, SameBits(l.pos_limit_y, s.pos_limit_y));
+    row(Concept::PositionLimitYDown, SameBits(l.pos_limit_y_down, s.pos_limit_y_down));
+    row(Concept::PositionLimitZ, SameBits(l.pos_limit_z, s.pos_limit_z));
+    row(Concept::PositionLimitZBack, SameBits(l.pos_limit_z_back, s.pos_limit_z_back));
+    row(Concept::CollisionEnabled, l.collision_enabled == s.collision_enabled);
+    row(Concept::CollisionReleaseSmoothing, SameBits(l.collision_release_smoothing, s.collision_release_smoothing));
+    row(Concept::ToggleKey, l.vk_toggle == s.vk_toggle && l.chord_toggle == s.chord_toggle);
+    row(Concept::CycleTrackingModeKey, l.vk_cycle_mode == s.vk_cycle_mode && l.chord_cycle_mode == s.chord_cycle_mode);
+    row(Concept::YawModeKey, l.vk_yaw_mode == s.vk_yaw_mode && l.chord_yaw_mode == s.chord_yaw_mode);
+    return u;
+}
+
+std::string Names(const std::set<Concept>& rows) {
+    std::string text;
+    for (const Concept row : rows) {
+        text += (text.empty() ? "" : ", ") + std::string(cfg::schema::kConcepts[static_cast<std::size_t>(row)].name);
+    }
+    return text.empty() ? "none" : text;
+}
+
+// A Ctrl, Shift or Alt key on its own, which N3 unbinds.
+bool IsModifierKey(int vk) { return (vk >= 0x10 && vk <= 0x12) || (vk >= 0xA0 && vk <= 0xA5); }
+
+// What the session should run on, in v0.1.0's terms: what the import read, each untouched row as
+// Defaults.ini gives it, and a hotkey code on a modifier key alone unbound (N3).
+legacy::Config Expected(const legacy::Config& l, bool builtin) {
+    const std::set<Concept> u = UntouchedRows(l);
+    const legacy::Config d = DefaultsIniValues(builtin);
+    legacy::Config e = l;
+    auto take = [&u](Concept id, auto& field, const auto& value) { if (u.count(id)) field = value; };
+    take(Concept::UdpPort, e.udp_port, d.udp_port);
+    take(Concept::EnableOnStartup, e.enabled_on_startup, d.enabled_on_startup);
+    take(Concept::WorldSpaceYaw, e.world_space_yaw, d.world_space_yaw);
+    take(Concept::PositionEnabled, e.position_enabled, d.position_enabled);
+    take(Concept::DataFreshnessMs, e.data_freshness_ms, d.data_freshness_ms);
+    take(Concept::LocalSmoothing, e.local_smoothing, d.local_smoothing);
+    take(Concept::RemoteSmoothing, e.remote_smoothing, d.remote_smoothing);
+    take(Concept::PositionLimitX, e.pos_limit_x, d.pos_limit_x);
+    take(Concept::PositionLimitY, e.pos_limit_y, d.pos_limit_y);
+    take(Concept::PositionLimitYDown, e.pos_limit_y_down, d.pos_limit_y_down);
+    take(Concept::PositionLimitZ, e.pos_limit_z, d.pos_limit_z);
+    take(Concept::PositionLimitZBack, e.pos_limit_z_back, d.pos_limit_z_back);
+    take(Concept::CollisionEnabled, e.collision_enabled, d.collision_enabled);
+    take(Concept::CollisionReleaseSmoothing, e.collision_release_smoothing, d.collision_release_smoothing);
+    take(Concept::ToggleKey, e.vk_toggle, d.vk_toggle);
+    take(Concept::ToggleKey, e.chord_toggle, d.chord_toggle);
+    take(Concept::CycleTrackingModeKey, e.vk_cycle_mode, d.vk_cycle_mode);
+    take(Concept::CycleTrackingModeKey, e.chord_cycle_mode, d.chord_cycle_mode);
+    take(Concept::YawModeKey, e.vk_yaw_mode, d.vk_yaw_mode);
+    take(Concept::YawModeKey, e.chord_yaw_mode, d.chord_yaw_mode);
+    for (int* vk : {&e.vk_toggle, &e.vk_cycle_mode, &e.vk_yaw_mode}) {
+        if (IsModifierKey(*vk)) *vk = 0;
+    }
+    return e;
+}
+
 cfg::ConfigOwnerOptions<Config> OwnerOptions(const fs::path& dir, const fs::path& defaults) {
     return MakeConfigOwnerOptions(dir.wstring() + L"\\", cfg::DefaultsFile::At(defaults.wstring()));
 }
@@ -497,12 +613,17 @@ struct Tally {
     int with_show_reticle_dropped = 0;
     int with_reticle_key_dropped = 0;
     int with_follows_default = 0;
+    int with_modifier_key_dropped = 0;
+    // Imports that leave at least one row to the player, and the tracking mode among them.
+    int with_changed_rows = 0;
+    int with_changed_mode = 0;
 };
 
 // ShowReticle is dropped exactly where it was off, the crosshair key exactly where it was bound
 // and its chord exactly where it was on, [Collision] CollisionEnabled exactly where it differs
-// from the table's default, which is also exactly where the row is left to Defaults.ini, and
-// nothing is dropped by any other rule. v0.1.0 read no pose shaping, so none is recorded.
+// from the table's default, a hotkey code exactly where it is a modifier key alone, and nothing
+// is dropped by any other rule. The rows left to Defaults.ini are exactly the untouched ones.
+// v0.1.0 read no pose shaping, so none is recorded.
 void CheckDrops(const std::string& name, const legacy::Config& l, const ImportResult& imported, Tally& tally) {
     Check(imported.pose_shaping.empty(), name + ": the import records pose shaping v0.1.0 never read");
 
@@ -520,25 +641,39 @@ void CheckDrops(const std::string& name, const legacy::Config& l, const ImportRe
         FindDrop(imported.dropped, DropRule::FollowsDefault, "Collision", "CollisionEnabled") != nullptr;
     Check(follows == (l.collision_enabled != MakeConfigTable().defaults().collision_enabled),
           name + ": [Collision] CollisionEnabled dropped does not match its value");
-    const std::vector<cfg::schema::Concept> leftToDefaults =
-        follows ? std::vector<cfg::schema::Concept>{cfg::schema::Concept::CollisionEnabled}
-                : std::vector<cfg::schema::Concept>{};
-    Check(imported.follows_defaults_ini == leftToDefaults,
-          name + ": the rows left to Defaults.ini are not CollisionEnabled exactly where it is dropped");
     if (follows) ++tally.with_follows_default;
 
+    const std::set<Concept> left(imported.follows_defaults_ini.begin(), imported.follows_defaults_ini.end());
+    Check(left.size() == imported.follows_defaults_ini.size(), name + ": follows_defaults_ini names a row twice");
+    const std::set<Concept> untouched = UntouchedRows(l);
+    Check(left == untouched, name + ": the rows left to Defaults.ini are " + Names(left) + ", not the untouched " +
+                                 Names(untouched));
+    Check(untouched.count(Concept::CollisionEnabled) == (follows ? 1u : 0u),
+          name + ": CollisionEnabled is left to Defaults.ini exactly where follows_default drops it");
+    if (untouched != AllFollowingRows()) ++tally.with_changed_rows;
+    if (!untouched.count(Concept::RotationEnabled)) ++tally.with_changed_mode;
+
+    const std::pair<const char*, int> codes[] = {
+        {"Toggle", l.vk_toggle}, {"CycleMode", l.vk_cycle_mode}, {"YawMode", l.vk_yaw_mode}};
+    bool modifier = false;
+    for (const auto& [hotkey, vk] : codes) {
+        const bool drop = FindDrop(imported.dropped, DropRule::ModifierKey, "Hotkeys", hotkey) != nullptr;
+        Check(drop == IsModifierKey(vk),
+              name + ": [Hotkeys] " + hotkey + " dropped as a modifier key does not match its value");
+        modifier = modifier || drop;
+    }
+    if (modifier) ++tally.with_modifier_key_dropped;
+
     for (const DroppedValue& d : imported.dropped) {
-        Check(d.rule == DropRule::Reticle || d.rule == DropRule::FollowsDefault,
+        Check(d.rule == DropRule::Reticle || d.rule == DropRule::FollowsDefault || d.rule == DropRule::ModifierKey,
               name + ": the import drops [" + d.section + "] " + d.key + " by a rule this map never applies");
     }
 }
 
-// The settings the mod starts on after the migration against the ones the frozen reader's build
-// started on, with the approved changes applied: the crosshair always follows the aim with no
-// key of its own (CheckDrops holds the import to recording what it leaves out), and the lean
-// clamp on where the player turned it on and at `defaultsCollision`, what Defaults.ini gives,
-// where the file holds the off v0.1.0 shipped.
-std::vector<std::string> StartupDifferences(const legacy::Config& l, const Config& m, bool defaultsCollision) {
+// The settings the mod starts on after the migration against `l`, what Expected gives: the
+// crosshair always follows the aim with no key of its own (CheckDrops holds the import to
+// recording what it leaves out).
+std::vector<std::string> StartupDifferences(const legacy::Config& l, const Config& m) {
     std::vector<std::string> d;
     if (m.enable_on_startup != l.enabled_on_startup) d.push_back("EnableOnStartup");
     if (m.udp_port != l.udp_port) d.push_back("UdpPort");
@@ -560,7 +695,7 @@ std::vector<std::string> StartupDifferences(const legacy::Config& l, const Confi
     if (!SameBits(m.position.limit_y_down, l.pos_limit_y_down)) d.push_back("PositionLimitYDown");
     if (!SameBits(m.position.limit_z, l.pos_limit_z)) d.push_back("PositionLimitZ");
     if (!SameBits(m.position.limit_z_back, l.pos_limit_z_back)) d.push_back("PositionLimitZBack");
-    if (m.collision_enabled != (l.collision_enabled || defaultsCollision)) d.push_back("CollisionEnabled");
+    if (m.collision_enabled != l.collision_enabled) d.push_back("CollisionEnabled");
     if (!SameBits(m.lean_clamp.skin, l.collision_radius)) d.push_back("CollisionMargin");
     if (!SameBits(m.lean_clamp.release_smoothing, l.collision_release_smoothing)) d.push_back("CollisionReleaseSmoothing");
     if (m.verbose != l.verbose) d.push_back("Verbose");
@@ -620,7 +755,7 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
         Check(after.files == Files{{kConfigFileName, tally.committed}},
               name + ": the folder does not hold CameraUnlock.ini as DyingLightHeadTracking.ini and nothing else");
         if (builtin) {
-            const std::vector<std::string> d = StartupDifferences(import.config, loaded.config, DefaultsCollision(builtin));
+            const std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
             Check(d.empty(), name + ": comparison 2: " + Join(d));
         }
         return;
@@ -637,7 +772,7 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
 
     // Imported or deferred, the session runs on the settings the load hands back.
     {
-        const std::vector<std::string> d = StartupDifferences(import.config, loaded.config, DefaultsCollision(builtin));
+        const std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
         Check(d.empty(), name + ": comparison 2: " + Join(d));
     }
 
@@ -662,6 +797,11 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
     Check(Contains(loaded.log, "created from"), name + ": the log does not say where CameraUnlock.ini came from");
     const std::string migrated = ReadBytes(config);
     tally.migrated.insert(migrated);
+    for (const Concept row : UntouchedRows(import.config)) {
+        const std::string key = cfg::schema::kConcepts[static_cast<std::size_t>(row)].key;
+        Check(migrated.find("\r\n" + key + "=default\r\n") != std::string::npos,
+              name + ": the untouched row " + key + " is not written default");
+    }
     if (migrated.find("=default\r\n") != std::string::npos) ++run.with_default_rows;
     if (migrated != tally.committed) ++run.with_values;
 
@@ -779,6 +919,19 @@ std::vector<Input> Inputs(const std::string& shipped, const std::string& firstRu
     inputs.push_back({"empty file", std::string()});
     inputs.push_back({"v0.1.0 shipped", shipped});
     inputs.push_back({"v0.1.0 first-run output", firstRun});
+    // N3: a code on a Ctrl, Shift or Alt key alone, which v0.1.0 read as a hotkey, on each action.
+    const std::pair<const char*, const char*> modifiers[] = {
+        {"\nToggle=0x23\n", "Toggle=0x10"},
+        {"\nCycleMode=0x21\n", "CycleMode=0xA2"},
+        {"\nYawMode=0x22\n", "YawMode=0xA5"},
+    };
+    for (const auto& [from, to] : modifiers) {
+        const size_t at = shipped.find(from);
+        if (at == std::string::npos) throw std::runtime_error(std::string("the shipped file has no line") + from);
+        std::string bytes = shipped;
+        bytes.replace(at, std::strlen(from), std::string("\n") + to + "\n");
+        inputs.push_back({std::string("v0.1.0 shipped with ") + to, std::move(bytes)});
+    }
     for (auto& m : GenerateIniMutations(shipped, legacy::ReadKeys(), MutationKeys())) {
         inputs.push_back({"corpus over shipped: " + m.name, std::move(m.bytes)});
     }
@@ -869,10 +1022,15 @@ int main() {
         std::printf("  %d with the crosshair key or its chord dropped (reticle)\n", tally.with_reticle_key_dropped);
         std::printf("  %d with [Collision] CollisionEnabled following the default (follows_default)\n",
                     tally.with_follows_default);
+        std::printf("  %d with a hotkey code on a modifier key alone unbound (N3)\n", tally.with_modifier_key_dropped);
+        std::printf("  %d leaving a changed row to the player, %d of them the tracking mode\n", tally.with_changed_rows,
+                    tally.with_changed_mode);
         std::printf("  deferred: %s\n", kUnrepresentable);
         Check(tally.with_show_reticle_dropped > 0, "no input drops ShowReticle");
         Check(tally.with_reticle_key_dropped > 0, "no input drops the crosshair key");
         Check(tally.with_follows_default > 0, "no input has [Collision] CollisionEnabled follow the default");
+        Check(tally.with_modifier_key_dropped >= 3, "the modifier key inputs do not each unbind their code");
+        Check(tally.with_changed_rows > 0 && tally.with_changed_mode > 0, "no input changes a row, or the tracking mode");
         Check(tally.migrated.count(tally.committed) == 1, "no input migrated to the committed file");
 
         wchar_t exe[MAX_PATH];
