@@ -84,6 +84,7 @@ try {
     $current = Get-ProjectVersion -Source 'manifest' -Path 'manifest.json'
     $new = Resolve-ReleaseVersion -Argument $Version -CurrentVersion $current
     if (-not (Test-SemanticVersion -Version $new)) { throw "Release version must be X.Y.Z, got '$new'." }
+    Assert-ReleaseNotBelowCanonicalSince -RepoRoot $root -Version $new
 
     # New-ReleaseTag pushes to main, so releasing from any other branch would
     # push commits that branch does not contain.
