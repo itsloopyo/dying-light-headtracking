@@ -6,7 +6,7 @@ the binary distribution has to carry them.
 
 ## cameraunlock-core
 
-- **Version:** `4a5e7f4d1c37efb9074f7f3651cde8327b64715a`
+- **Version:** `8c20519752d399076f7eb0b6c7b98c55e20b1171`
 - **License:** MIT
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** Statically linked into `DyingLightHeadTracking.asi` for the OpenTrack UDP receiver, pose interpolation and smoothing, the position processor, the lean clamp policy, the FOV zoom compensation, the hotkey poller, the RTTI vtable lookup, the byte-pattern scanner, the PE fingerprint reader, the config owner and hotkey key lists, the legacy INI reader, the file log and the crash handler.
