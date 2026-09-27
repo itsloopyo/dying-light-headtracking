@@ -986,6 +986,13 @@ int main() {
             Check(cfg::ConfigOwner<Config>(OwnerOptions(dir, g_builtinDefaults)).Load().status == ConfigLoadStatus::Migrated &&
                       ReadBytes(dir / kConfigFileName) == tally.committed,
                   std::string("v0.1.0's ") + label + " does not import into the committed file");
+            // Held to the full row list rather than to UntouchedRows, which reads its baseline
+            // from the same initialisers as the import: a shipped value that parsed differently
+            // from its initialiser would pin that row in every upgraded file.
+            const ImportResult mapped = RunMappedImport(scratch, Input{label, *bytes});
+            const std::set<Concept> left(mapped.follows_defaults_ini.begin(), mapped.follows_defaults_ini.end());
+            Check(left == AllFollowingRows(), std::string("v0.1.0's ") + label + " leaves " + Names(left) +
+                                                  " to Defaults.ini, not every row that follows it");
         }
 
         CollisionFollowsDefaultsIni(scratch, shipped);
