@@ -20,8 +20,8 @@
 // CollisionEnabled, which shipped off pending verification, follows Defaults.ini where it holds
 // that off (follows_default), and a hotkey code on a Ctrl, Shift or Alt key alone is unbound while
 // its chord is kept (N3). v0.1.0 read no sensitivity, inversion or scale, so nothing is dropped as
-// pose shaping. A value the canonical row cannot hold has no approved rule, so the owner defers
-// that import and the session runs on what the import gave (kUnrepresentable).
+// pose shaping. v0.1.0 read the five [Position] limits with no upper bound and the rows take 0 to
+// 10, so a limit above 10 imports as 10 and is recorded with the value read (N4).
 //
 // A row the player never changed from what v0.1.0 shipped follows Defaults.ini: the import lists
 // it in follows_defaults_ini, the tracking mode pair as one unit and each hotkey with its chord
@@ -46,8 +46,9 @@
 // compiled (OracleFires), and through the guard the current build registers (CurrentFires).
 //
 // Inputs: no file, an empty file, the file v0.1.0 shipped (its installer ZIP and its launcher
-// seed carried the same bytes), v0.1.0's first-run output, and core's corpus over each of the
-// two.
+// seed carried the same bytes), v0.1.0's first-run output, the shipped file with a hotkey on a
+// Ctrl, Shift or Alt key alone, with a hotkey on Insert and with a limit above 10 or at 10, and
+// core's corpus over each of the first two, which also sets each limit to 15.
 
 #include "config.h"
 #include "legacy_config/legacy_config.h"
@@ -83,12 +84,8 @@ using namespace DyingLightHeadTracking;
 namespace {
 
 // v0.1.0 read the five [Position] limits with no upper bound, and the canonical rows take 0 to
-// 10 metres. Core has no rule for a value outside a concept's range, so the owner defers such a
-// file: it stays as it is, the session runs on what the import read, and nothing is saved.
-const char* const kUnrepresentable =
-    "[Position] LimitX, LimitY, LimitYDown, LimitZ or LimitZBack above 10, which the canonical rows cannot "
-    "hold, so the import defers";
-
+// 10 metres, so a limit above 10 is clamped to 10 (N4). The frozen reader already raises a
+// negative one to 0.
 constexpr float kMaxCanonicalLimit = 10.0f;
 
 constexpr const char* kFileName = "DyingLightHeadTracking.ini";
@@ -325,11 +322,11 @@ std::vector<cameraunlock::config::testing::MutationKey> MutationKeys() {
         plain("Smoothing", "LocalSmoothing", "0.3", {"-0.5", "1.5"}),
         plain("Smoothing", "RemoteSmoothing", "0.3", {"-0.5", "1.5"}),
         plain("Position", "Enabled", "false"),
-        plain("Position", "LimitX", "0.5", {"-0.3"}),
-        plain("Position", "LimitY", "0.5", {"-0.2"}),
-        plain("Position", "LimitYDown", "0.5", {"-0.2"}),
-        plain("Position", "LimitZ", "0.5", {"-0.4"}),
-        plain("Position", "LimitZBack", "0.2", {"-0.1"}),
+        plain("Position", "LimitX", "0.5", {"-0.3", "15"}),
+        plain("Position", "LimitY", "0.5", {"-0.2", "15"}),
+        plain("Position", "LimitYDown", "0.5", {"-0.2", "15"}),
+        plain("Position", "LimitZ", "0.5", {"-0.4", "15"}),
+        plain("Position", "LimitZBack", "0.2", {"-0.1", "15"}),
         plain("Diagnostics", "Verbose", "true"),
         plain("Diagnostics", "IgnoreGameplayGate", "true"),
         plain("Collision", "CollisionEnabled", "true"),
@@ -560,7 +557,8 @@ std::string Names(const std::set<Concept>& rows) {
 bool IsModifierKey(int vk) { return (vk >= 0x10 && vk <= 0x12) || (vk >= 0xA0 && vk <= 0xA5); }
 
 // What the session should run on, in v0.1.0's terms: what the import read, each untouched row as
-// Defaults.ini gives it, and a hotkey code on a modifier key alone unbound (N3).
+// Defaults.ini gives it, a hotkey code on a modifier key alone unbound (N3), and a limit above 10
+// at 10 (N4).
 legacy::Config Expected(const legacy::Config& l, bool builtin) {
     const std::set<Concept> u = UntouchedRows(l);
     const legacy::Config d = DefaultsIniValues(builtin);
@@ -588,6 +586,9 @@ legacy::Config Expected(const legacy::Config& l, bool builtin) {
     take(Concept::YawModeKey, e.chord_yaw_mode, d.chord_yaw_mode);
     for (int* vk : {&e.vk_toggle, &e.vk_cycle_mode, &e.vk_yaw_mode}) {
         if (IsModifierKey(*vk)) *vk = 0;
+    }
+    for (float* limit : {&e.pos_limit_x, &e.pos_limit_y, &e.pos_limit_y_down, &e.pos_limit_z, &e.pos_limit_z_back}) {
+        *limit = std::min(*limit, kMaxCanonicalLimit);
     }
     return e;
 }
@@ -628,7 +629,6 @@ struct Tally {
     struct Run {
         int created = 0;
         int imported = 0;
-        int deferred = 0;
         int refused = 0;
         // Migrated files holding at least one default row.
         int with_default_rows = 0;
@@ -639,6 +639,7 @@ struct Tally {
     int with_reticle_key_dropped = 0;
     int with_follows_default = 0;
     int with_modifier_key_dropped = 0;
+    int with_limit_clamped = 0;
     // Migrations whose true free look key list is Ctrl+Shift+U alone, an action having Insert.
     int with_insert_kept = 0;
     // Imports that leave at least one row to the player, and the tracking mode among them.
@@ -648,8 +649,8 @@ struct Tally {
 
 // ShowReticle is dropped exactly where it was off, the crosshair key exactly where it was bound
 // and its chord exactly where it was on, [Collision] CollisionEnabled exactly where it differs
-// from the table's default, a hotkey code exactly where it is a modifier key alone, and nothing
-// is dropped by any other rule. The rows left to Defaults.ini are exactly the untouched ones.
+// from the table's default, a hotkey code exactly where it is a modifier key alone, a limit
+// exactly where it is above 10 (N4), with the value read, and nothing is dropped by any other rule. The rows left to Defaults.ini are exactly the untouched ones.
 // v0.1.0 read no pose shaping, so none is recorded.
 void CheckDrops(const std::string& name, const legacy::Config& l, const ImportResult& imported, Tally& tally) {
     Check(imported.pose_shaping.empty(), name + ": the import records pose shaping v0.1.0 never read");
@@ -691,8 +692,27 @@ void CheckDrops(const std::string& name, const legacy::Config& l, const ImportRe
     }
     if (modifier) ++tally.with_modifier_key_dropped;
 
+    const std::pair<const char*, float> limits[] = {{"LimitX", l.pos_limit_x},
+                                                    {"LimitY", l.pos_limit_y},
+                                                    {"LimitYDown", l.pos_limit_y_down},
+                                                    {"LimitZ", l.pos_limit_z},
+                                                    {"LimitZBack", l.pos_limit_z_back}};
+    bool clamped = false;
+    for (const auto& [limitKey, value] : limits) {
+        const DroppedValue* drop = FindDrop(imported.dropped, DropRule::NumberOutOfRange, "Position", limitKey);
+        Check((drop != nullptr) == (value > kMaxCanonicalLimit),
+              name + ": [Position] " + limitKey + " clamped does not match its value");
+        if (drop) {
+            Check(std::stof(drop->value) == value,
+                  name + ": [Position] " + limitKey + " is recorded as " + drop->value + ", not the value read");
+        }
+        clamped = clamped || drop != nullptr;
+    }
+    if (clamped) ++tally.with_limit_clamped;
+
     for (const DroppedValue& d : imported.dropped) {
-        Check(d.rule == DropRule::Reticle || d.rule == DropRule::FollowsDefault || d.rule == DropRule::ModifierKey,
+        Check(d.rule == DropRule::Reticle || d.rule == DropRule::FollowsDefault || d.rule == DropRule::ModifierKey ||
+                  d.rule == DropRule::NumberOutOfRange,
               name + ": the import drops [" + d.section + "] " + d.key + " by a rule this map never applies");
     }
 }
@@ -731,12 +751,6 @@ std::vector<std::string> StartupDifferences(const legacy::Config& l, const Confi
     const dlht_oracle_view::FireTable after = CurrentFires(m);
     if (before != after) d.push_back("hotkeys: " + FirstFireDifference(before, after));
     return d;
-}
-
-bool Unrepresentable(const legacy::Config& l) {
-    return l.pos_limit_x > kMaxCanonicalLimit || l.pos_limit_y > kMaxCanonicalLimit ||
-           l.pos_limit_y_down > kMaxCanonicalLimit || l.pos_limit_z > kMaxCanonicalLimit ||
-           l.pos_limit_z_back > kMaxCanonicalLimit;
 }
 
 // Every field the table binds, as the canonical renderer writes it, so two Configs compare whole.
@@ -799,23 +813,12 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
 
     if (builtin) CheckDrops(name, import.config, *mapped, tally);
 
-    // Imported or deferred, the session runs on the settings the load hands back.
+    // The session runs on the settings the load hands back.
     {
         std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
         const std::vector<std::string> t = TrueFreeLookDifferences(import.config, loaded.config, builtin);
         d.insert(d.end(), t.begin(), t.end());
         Check(d.empty(), name + ": comparison 2: " + Join(d));
-    }
-
-    if (Unrepresentable(import.config)) {
-        ++run.deferred;
-        Check(loaded.status == ConfigLoadStatus::Deferred,
-              name + ": " + kUnrepresentable + ", but the load is " + cfg::ConfigLoadStatusName(loaded.status));
-        Check(after.files == Files{{kFileName, *input.bytes}},
-              name + ": a deferred import created CameraUnlock.ini or another file");
-        Check(loaded.reason.find("cannot be converted") != std::string::npos,
-              name + ": the player is not told which value stops the import: " + loaded.reason);
-        return;
     }
 
     ++run.imported;
@@ -826,6 +829,11 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
               after.files[1].second == *input.bytes,
           name + ": the folder does not hold DyingLightHeadTracking.ini and CameraUnlock.ini and nothing else");
     Check(Contains(loaded.log, "created from"), name + ": the log does not say where CameraUnlock.ini came from");
+    const legacy::Config& l = import.config;
+    if (std::max({l.pos_limit_x, l.pos_limit_y, l.pos_limit_y_down, l.pos_limit_z, l.pos_limit_z_back}) >
+        kMaxCanonicalLimit) {
+        Check(Contains(loaded.log, "outside the range this setting takes"), name + ": the log does not name the clamp");
+    }
     const std::string migrated = ReadBytes(config);
     tally.migrated.insert(migrated);
     for (const Concept row : UntouchedRows(import.config)) {
@@ -963,13 +971,19 @@ std::vector<Input> Inputs(const std::string& shipped, const std::string& firstRu
         {"\nCycleMode=0x21\n", "CycleMode=0xA2"},
         {"\nYawMode=0x22\n", "YawMode=0xA5"},
     };
+    // A limit above 10, clamped (N4), and one at 10, which is not.
+    const std::pair<const char*, const char*> limits[] = {
+        {"\nLimitX=0.3\n", "LimitX=15"},
+        {"\nLimitZBack=0.1\n", "LimitZBack=10.5"},
+        {"\nLimitZ=0.4\n", "LimitZ=10"},
+    };
     // An action on Insert, which true free look then leaves to it.
     const std::pair<const char*, const char*> inserts[] = {
         {"\nToggle=0x23\n", "Toggle=0x2D"},
         {"\nCycleMode=0x21\n", "CycleMode=0x2D"},
         {"\nYawMode=0x22\n", "YawMode=0x2D"},
     };
-    for (const auto* list : {modifiers, inserts}) {
+    for (const auto* list : {modifiers, inserts, limits}) {
         for (std::size_t i = 0; i < 3; ++i) {
             const auto& [from, to] = list[i];
             const size_t at = shipped.find(from);
@@ -1064,10 +1078,8 @@ int main() {
                                                                   {"changed", &tally.altered}};
         for (const auto& [over, run] : runs) {
             std::printf("  over Defaults.ini %s: %d created, %d imported (%d holding a default row, %d not the "
-                        "committed file), %d deferred, %d refused as v0.1.0 refused them\n",
-                        over, run->created, run->imported, run->with_default_rows, run->with_values, run->deferred,
-                        run->refused);
-            Check(run->deferred > 0, std::string("no input is deferred over ") + over);
+                        "committed file), %d refused as v0.1.0 refused them\n",
+                        over, run->created, run->imported, run->with_default_rows, run->with_values, run->refused);
             Check(run->refused > 0, std::string("no input is refused over ") + over);
             Check(run->with_default_rows > 0, std::string("no import writes default over ") + over);
             Check(run->with_values > 0, std::string("no import writes a value over ") + over);
@@ -1080,11 +1092,12 @@ int main() {
         std::printf("  %d with an action on Insert and true free look on Ctrl+Shift+U alone\n", tally.with_insert_kept);
         std::printf("  %d leaving a changed row to the player, %d of them the tracking mode\n", tally.with_changed_rows,
                     tally.with_changed_mode);
-        std::printf("  deferred: %s\n", kUnrepresentable);
+        std::printf("  %d with a [Position] limit above 10 clamped to 10 (N4)\n", tally.with_limit_clamped);
         Check(tally.with_show_reticle_dropped > 0, "no input drops ShowReticle");
         Check(tally.with_reticle_key_dropped > 0, "no input drops the crosshair key");
         Check(tally.with_follows_default > 0, "no input has [Collision] CollisionEnabled follow the default");
         Check(tally.with_modifier_key_dropped >= 3, "the modifier key inputs do not each unbind their code");
+        Check(tally.with_limit_clamped >= 5, "the limits above 10 are not each clamped");
         Check(tally.with_insert_kept >= 3, "the Insert inputs do not each keep Insert off true free look");
         Check(tally.with_changed_rows > 0 && tally.with_changed_mode > 0, "no input changes a row, or the tracking mode");
         Check(tally.migrated.count(tally.committed) == 1, "no input migrated to the committed file");

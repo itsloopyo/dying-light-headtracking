@@ -110,11 +110,16 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.remote_smoothing = c.remote_smoothing;
     out.position.remote_smoothing = c.remote_smoothing;
 
-    out.position.limit_x = c.pos_limit_x;
-    out.position.limit_y = c.pos_limit_y;
-    out.position.limit_y_down = c.pos_limit_y_down;
-    out.position.limit_z = c.pos_limit_z;
-    out.position.limit_z_back = c.pos_limit_z_back;
+    // v0.1.0 read the limits with no upper bound, and the rows take 0 to 10, so a limit above 10
+    // imports as 10 (N4). The comparison above takes the value as read: the player set it.
+    using cameraunlock::config::LegacyClampToRange;
+    out.position.limit_x = LegacyClampToRange<Concept::PositionLimitX>(c.pos_limit_x, "Position", "LimitX", dropped);
+    out.position.limit_y = LegacyClampToRange<Concept::PositionLimitY>(c.pos_limit_y, "Position", "LimitY", dropped);
+    out.position.limit_y_down =
+        LegacyClampToRange<Concept::PositionLimitYDown>(c.pos_limit_y_down, "Position", "LimitYDown", dropped);
+    out.position.limit_z = LegacyClampToRange<Concept::PositionLimitZ>(c.pos_limit_z, "Position", "LimitZ", dropped);
+    out.position.limit_z_back =
+        LegacyClampToRange<Concept::PositionLimitZBack>(c.pos_limit_z_back, "Position", "LimitZBack", dropped);
 
     // v0.1.0 shipped the lean clamp switched off pending verification, so an off here is the
     // build's value, not the player's, and the row follows Defaults.ini (approved change
