@@ -65,18 +65,6 @@ function Update-VersionInFile {
     Set-TextFileNoBom -Path $full -Text $updated
 }
 
-# Mirrors New-ChangelogFromCommits' insertion so a -Force maintenance entry
-# lands in the same place with the same shape.
-function Add-MaintenanceChangelogEntry {
-    param([string]$Path, [string]$NewVersion)
-    $full = Join-Path $root $Path
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    $entry = "## [$NewVersion] - $date`n`n### Changed`n`n- Maintenance release (no user-facing changes).`n`n"
-    $changelog = [System.IO.File]::ReadAllText($full)
-    $changelog = $changelog -replace '(?s)(# Changelog.*?\n\n)', "`$1$entry"
-    Set-TextFileNoBom -Path $full -Text ($changelog.TrimEnd() + "`n")
-}
-
 Push-Location $root
 try {
     # manifest.json is canonical: package-release.ps1 names the ZIP from it and
@@ -113,15 +101,12 @@ try {
         New-ChangelogFromCommits -ChangelogPath 'CHANGELOG.md' -Version $new -ArtifactPaths @(
             'src/', 'cameraunlock-core/', 'DyingLightHeadTracking.ini',
             'launcher-manifest.json', 'scripts/install.cmd', 'scripts/uninstall.cmd'
-        ) | Out-Null
+        ) -Maintenance:$Force | Out-Null
     } catch {
-        if (-not $Force) {
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
-            exit 1
-        }
-        Write-Host 'No user-facing commits since last tag - writing maintenance entry (-Force).' -ForegroundColor Yellow
-        Add-MaintenanceChangelogEntry -Path 'CHANGELOG.md' -NewVersion $new
+        if ($Force) { throw }
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
+        exit 1
     }
 
     # manifest.json is canonical; the rest are hand-kept copies. CMakeLists.txt
