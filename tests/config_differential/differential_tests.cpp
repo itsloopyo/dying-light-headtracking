@@ -26,7 +26,10 @@
 // A row the player never changed from what v0.1.0 shipped follows Defaults.ini: the import lists
 // it in follows_defaults_ini, the tracking mode pair as one unit and each hotkey with its chord
 // switch, and the migration writes it default. The test derives the untouched rows from what the
-// import read and holds the import's list to them on every input.
+// import read and holds the import's list to them on every input. v0.1.0 had no true free look,
+// so TrueFreeLook and its key list follow Defaults.ini too, except that where an action the import
+// keeps is on Insert the key list is written as Ctrl+Shift+U alone, so Insert fires only what it
+// fired before.
 //
 // Comparison 2 runs twice, once over a Defaults.ini at the built-in values, which are v0.1.0's
 // defaults apart from CollisionEnabled, and once over one a player changed on every row. Over the
@@ -509,6 +512,12 @@ const std::set<Concept>& AllFollowingRows() {
     return all;
 }
 
+// An action the import keeps is on Insert, the key true free look takes. v0.1.0 had none of its
+// actions there: the crosshair key was, and it is dropped.
+bool KeepsInsert(const legacy::Config& l) {
+    return l.vk_toggle == VK_INSERT || l.vk_cycle_mode == VK_INSERT || l.vk_yaw_mode == VK_INSERT;
+}
+
 // The rows whose every legacy setting reads as v0.1.0 shipped it, floats bit for bit.
 std::set<Concept> UntouchedRows(const legacy::Config& l) {
     const legacy::Config s;
@@ -532,9 +541,10 @@ std::set<Concept> UntouchedRows(const legacy::Config& l) {
     row(Concept::ToggleKey, l.vk_toggle == s.vk_toggle && l.chord_toggle == s.chord_toggle);
     row(Concept::CycleTrackingModeKey, l.vk_cycle_mode == s.vk_cycle_mode && l.chord_cycle_mode == s.chord_cycle_mode);
     row(Concept::YawModeKey, l.vk_yaw_mode == s.vk_yaw_mode && l.chord_yaw_mode == s.chord_yaw_mode);
-    // v0.1.0 had no true free look, so no player can have changed it.
+    // v0.1.0 had no true free look, so no player can have changed it. Its key list is written out
+    // where an action the import keeps has Insert (KeepsInsert).
     row(Concept::TrueFreeLook, true);
-    row(Concept::TrueFreeLookKey, true);
+    row(Concept::TrueFreeLookKey, !KeepsInsert(l));
     return u;
 }
 
@@ -586,6 +596,17 @@ cfg::ConfigOwnerOptions<Config> OwnerOptions(const fs::path& dir, const fs::path
     return MakeConfigOwnerOptions(dir.wstring() + L"\\", cfg::DefaultsFile::At(defaults.wstring()));
 }
 
+// v0.1.0 had no true free look, so the session starts on Defaults.ini's TrueFreeLook, and on its
+// TrueFreeLookKey unless an action the import keeps has Insert: then on Ctrl+Shift+U alone, so
+// Insert fires only what it fired before.
+std::vector<std::string> TrueFreeLookDifferences(const legacy::Config& l, const Config& m, bool builtin) {
+    std::vector<std::string> d;
+    if (m.true_free_look != !builtin) d.push_back("TrueFreeLook");
+    const char* key = KeepsInsert(l) ? "Ctrl+Shift+U" : builtin ? "Insert, Ctrl+Shift+U" : "F5, Ctrl+Shift+U";
+    if (m.true_free_look_key_name != key) d.push_back("TrueFreeLookKey=" + m.true_free_look_key_name + ", not " + key);
+    return d;
+}
+
 // The import with its map, for the values it records.
 ImportResult RunMappedImport(Scratch& scratch, const Input& input) {
     const fs::path file = Place(scratch.Clean("mapped"), input);
@@ -618,6 +639,8 @@ struct Tally {
     int with_reticle_key_dropped = 0;
     int with_follows_default = 0;
     int with_modifier_key_dropped = 0;
+    // Migrations whose true free look key list is Ctrl+Shift+U alone, an action having Insert.
+    int with_insert_kept = 0;
     // Imports that leave at least one row to the player, and the tracking mode among them.
     int with_changed_rows = 0;
     int with_changed_mode = 0;
@@ -759,7 +782,9 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
         Check(after.files == Files{{kConfigFileName, tally.committed}},
               name + ": the folder does not hold CameraUnlock.ini as DyingLightHeadTracking.ini and nothing else");
         if (builtin) {
-            const std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
+            std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
+            const std::vector<std::string> t = TrueFreeLookDifferences(import.config, loaded.config, builtin);
+            d.insert(d.end(), t.begin(), t.end());
             Check(d.empty(), name + ": comparison 2: " + Join(d));
         }
         return;
@@ -776,7 +801,9 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
 
     // Imported or deferred, the session runs on the settings the load hands back.
     {
-        const std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
+        std::vector<std::string> d = StartupDifferences(Expected(import.config, builtin), loaded.config);
+        const std::vector<std::string> t = TrueFreeLookDifferences(import.config, loaded.config, builtin);
+        d.insert(d.end(), t.begin(), t.end());
         Check(d.empty(), name + ": comparison 2: " + Join(d));
     }
 
@@ -805,6 +832,11 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
         const std::string key = cfg::schema::kConcepts[static_cast<std::size_t>(row)].key;
         Check(migrated.find("\r\n" + key + "=default\r\n") != std::string::npos,
               name + ": the untouched row " + key + " is not written default");
+    }
+    if (KeepsInsert(import.config)) {
+        Check(migrated.find("\r\nTrueFreeLookKey=Ctrl+Shift+U\r\n") != std::string::npos,
+              name + ": an action on Insert leaves TrueFreeLookKey more than Ctrl+Shift+U");
+        if (builtin) ++tally.with_insert_kept;
     }
     if (migrated.find("=default\r\n") != std::string::npos) ++run.with_default_rows;
     if (migrated != tally.committed) ++run.with_values;
@@ -864,6 +896,8 @@ void WriteAlteredDefaults() {
         {"ToggleKey=End, Ctrl+Shift+Y", "ToggleKey=F1, Ctrl+Shift+Y"},
         {"CycleTrackingModeKey=PageUp, Ctrl+Shift+G", "CycleTrackingModeKey=F2, Ctrl+Shift+G"},
         {"YawModeKey=PageDown, Ctrl+Shift+H", "YawModeKey=F3, Ctrl+Shift+H"},
+        {"TrueFreeLook=false", "TrueFreeLook=true"},
+        {"TrueFreeLookKey=Insert, Ctrl+Shift+U", "TrueFreeLookKey=F5, Ctrl+Shift+U"},
     };
     for (const auto& [from, to] : changes) {
         const std::string line = std::string("\r\n") + from + "\r\n";
@@ -929,12 +963,21 @@ std::vector<Input> Inputs(const std::string& shipped, const std::string& firstRu
         {"\nCycleMode=0x21\n", "CycleMode=0xA2"},
         {"\nYawMode=0x22\n", "YawMode=0xA5"},
     };
-    for (const auto& [from, to] : modifiers) {
-        const size_t at = shipped.find(from);
-        if (at == std::string::npos) throw std::runtime_error(std::string("the shipped file has no line") + from);
-        std::string bytes = shipped;
-        bytes.replace(at, std::strlen(from), std::string("\n") + to + "\n");
-        inputs.push_back({std::string("v0.1.0 shipped with ") + to, std::move(bytes)});
+    // An action on Insert, which true free look then leaves to it.
+    const std::pair<const char*, const char*> inserts[] = {
+        {"\nToggle=0x23\n", "Toggle=0x2D"},
+        {"\nCycleMode=0x21\n", "CycleMode=0x2D"},
+        {"\nYawMode=0x22\n", "YawMode=0x2D"},
+    };
+    for (const auto* list : {modifiers, inserts}) {
+        for (std::size_t i = 0; i < 3; ++i) {
+            const auto& [from, to] = list[i];
+            const size_t at = shipped.find(from);
+            if (at == std::string::npos) throw std::runtime_error(std::string("the shipped file has no line") + from);
+            std::string bytes = shipped;
+            bytes.replace(at, std::strlen(from), std::string("\n") + to + "\n");
+            inputs.push_back({std::string("v0.1.0 shipped with ") + to, std::move(bytes)});
+        }
     }
     for (auto& m : GenerateIniMutations(shipped, legacy::ReadKeys(), MutationKeys())) {
         inputs.push_back({"corpus over shipped: " + m.name, std::move(m.bytes)});
@@ -1034,6 +1077,7 @@ int main() {
         std::printf("  %d with [Collision] CollisionEnabled following the default (follows_default)\n",
                     tally.with_follows_default);
         std::printf("  %d with a hotkey code on a modifier key alone unbound (N3)\n", tally.with_modifier_key_dropped);
+        std::printf("  %d with an action on Insert and true free look on Ctrl+Shift+U alone\n", tally.with_insert_kept);
         std::printf("  %d leaving a changed row to the player, %d of them the tracking mode\n", tally.with_changed_rows,
                     tally.with_changed_mode);
         std::printf("  deferred: %s\n", kUnrepresentable);
@@ -1041,6 +1085,7 @@ int main() {
         Check(tally.with_reticle_key_dropped > 0, "no input drops the crosshair key");
         Check(tally.with_follows_default > 0, "no input has [Collision] CollisionEnabled follow the default");
         Check(tally.with_modifier_key_dropped >= 3, "the modifier key inputs do not each unbind their code");
+        Check(tally.with_insert_kept >= 3, "the Insert inputs do not each keep Insert off true free look");
         Check(tally.with_changed_rows > 0 && tally.with_changed_mode > 0, "no input changes a row, or the tracking mode");
         Check(tally.migrated.count(tally.committed) == 1, "no input migrated to the committed file");
 

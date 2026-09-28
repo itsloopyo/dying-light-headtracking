@@ -35,6 +35,14 @@ std::string KeyList(int vk, bool chord, char letter, const char* key, std::vecto
     return list;
 }
 
+constexpr int kVkInsert = 0x2D;
+
+// v0.1.0 had no true free look. Its key list comes after the other three, so where one of them
+// already has Insert the list keeps only its chord, and Insert fires what it fired before.
+bool InsertTaken(const legacy::Config& c) {
+    return c.vk_toggle == kVkInsert || c.vk_cycle_mode == kVkInsert || c.vk_yaw_mode == kVkInsert;
+}
+
 std::string HexCode(int vk) {
     char text[8];
     std::snprintf(text, sizeof text, "0x%02X", static_cast<unsigned>(vk));
@@ -82,7 +90,7 @@ ImportResult Import(const LegacyInput& input, Config& out) {
                     c.vk_cycle_mode == shipped.vk_cycle_mode && c.chord_cycle_mode == shipped.chord_cycle_mode);
     follows.Setting(Concept::YawModeKey, c.vk_yaw_mode == shipped.vk_yaw_mode && c.chord_yaw_mode == shipped.chord_yaw_mode);
     follows.NotInLegacy(Concept::TrueFreeLook);
-    follows.NotInLegacy(Concept::TrueFreeLookKey);
+    follows.Setting(Concept::TrueFreeLookKey, !InsertTaken(c));
 
     out.enable_on_startup = c.enabled_on_startup;
     out.udp_port = c.udp_port;
@@ -131,6 +139,10 @@ ImportResult Import(const LegacyInput& input, Config& out) {
     out.toggle_key_name = KeyList(c.vk_toggle, c.chord_toggle, 'Y', "Toggle", dropped);
     out.cycle_tracking_mode_key_name = KeyList(c.vk_cycle_mode, c.chord_cycle_mode, 'G', "CycleMode", dropped);
     out.yaw_mode_key_name = KeyList(c.vk_yaw_mode, c.chord_yaw_mode, 'H', "YawMode", dropped);
+    if (InsertTaken(c)) {
+        out.true_free_look_key_name =
+            cameraunlock::input::FormatKeyBindings({KeyBinding{KeyModifiers::kCtrl | KeyModifiers::kShift, 'U'}});
+    }
 
     return read.status == legacy::ReadStatus::Absent
                ? ImportResult::Absent(std::move(dropped), {}, follows.Concepts())
