@@ -9,6 +9,9 @@ struct TraceHit {
     bool blocked = false;
     float distance = 0.0f;
     Vec3f point;
+    // The surface normal at the hit, from Cast only; zero when the engine's answer
+    // was not a unit vector. Core's line sweep reads zero as the worst angle.
+    Vec3f normal;
 };
 
 // The engine's own world raycast, replayed with a context captured from the game.
@@ -42,8 +45,9 @@ void NoteCamera(const Vec3f& pos, const Vec3f& forward);
 TraceHit GameAimHit();
 
 // Casts from `start` along the unit vector `direction` for `maxDistance` world
-// units, using the context from the game's most recent aim trace. Reports "not
-// queried" when the game has stopped making that trace.
+// units, using the context from the game's most recent aim trace, and reports
+// the surface normal with a hit. Reports "not queried" when the game has stopped
+// making that trace.
 TraceHit Cast(const Vec3f& start, const Vec3f& direction, float maxDistance);
 
 }  // namespace world_query

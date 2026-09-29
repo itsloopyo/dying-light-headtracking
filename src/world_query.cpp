@@ -37,6 +37,15 @@ using RaytraceFn = unsigned char (*)(void* thiz, const void* cache, unsigned cha
 // engine writes vectors into it.
 constexpr std::size_t kCollisionBytes = 1024;
 
+// SCollision opens with the surface normal: Raytrace copies it from +0x0C of the
+// tracer's hit record, the field IControlObject::AlignToGround reads back and
+// crosses with the object's axes to stand it on the ground.
+constexpr std::size_t kCollisionNormalOffset = 0;
+
+// A normal further than this from unit length is not one, and the hit is handed
+// on with a zero normal, which the line sweep treats as the worst angle.
+constexpr float kUnitTolerance = 0.05f;
+
 struct CapturedContext {
     void* thiz = nullptr;
     unsigned char mode = 0;
@@ -180,6 +189,7 @@ unsigned char Detour(void* thiz, const void* cache, unsigned char mode, void* co
 }
 
 bool g_loggedStale = false;
+bool g_loggedNormal = false;
 
 }  // namespace
 
@@ -286,6 +296,19 @@ TraceHit Cast(const Vec3f& start, const Vec3f& direction, float maxDistance) {
     out.blocked = true;
     out.distance = distance;
     out.point = hit;
+
+    Vec3f normal;
+    std::memcpy(&normal, collision + kCollisionNormalOffset, sizeof(normal));
+    const float normalLength = Length(normal);
+    const bool unit = std::fabs(normalLength - 1.0f) <= kUnitTolerance;
+    if (unit) out.normal = Scale(normal, 1.0f / normalLength);
+    if (!g_loggedNormal) {
+        g_loggedNormal = true;
+        Log::Line("World query: first lean cast hit at %.2f m, SCollision normal (%.3f %.3f %.3f)%s",
+                  static_cast<double>(distance), static_cast<double>(normal.x),
+                  static_cast<double>(normal.y), static_cast<double>(normal.z),
+                  unit ? "" : " is not a unit vector, so every hit is taken at the worst angle");
+    }
     return out;
 }
 

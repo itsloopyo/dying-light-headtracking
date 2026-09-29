@@ -46,6 +46,10 @@ constexpr float kMaxLeanDtSec = 0.25f;
 
 constexpr float kRadToDeg = 57.2957795f;
 
+// The standoff is taken this much past the near plane's corners, so a surface
+// the sweep stops the eye against is never exactly on the plane.
+constexpr float kNearPlaneSafety = 1.1f;
+
 // The game eases the field of view in over the first seconds of a level (45 deg
 // up to the default 52 on this build) and nudges it while walking, so the zoom
 // line waits for the live value to hold still this many frames. A line taken
@@ -70,7 +74,9 @@ const engine::Level* g_lastLevel = nullptr;
 
 cameraunlock::camera::LeanClamp g_leanClamp;
 AimLean g_aimLean;
-lean_trace::Context g_leanContext;
+cameraunlock::camera::LineSweep g_leanSweep;
+bool g_loggedNearPlaneRadius = false;
+bool g_loggedNoRadius = false;
 
 std::atomic<unsigned long long> g_updates{0};
 std::atomic<unsigned long long> g_posed{0};
@@ -174,14 +180,26 @@ float ZoomFactor(const FrameTangents& t) {
     return factor;
 }
 
-void ReportLeanClampState() {
+// Transitions alone cannot tell a sweep that runs in an open room from one that
+// is not running at all, so a posed lean is also sampled on this interval.
+constexpr std::uint64_t kLeanSampleMicros = 5000000;
+std::uint64_t g_lastLeanSampleMicros = 0;
+
+void ReportLeanClampState(float desired, float allowed, float radius, std::uint64_t nowMicros) {
     const bool contact = g_leanClamp.InContact();
     const bool failed = g_leanClamp.LastQueryFailed();
     if (contact != g_lastLeanContact || failed != g_lastLeanQueryFailed) {
         Log::Line("Lean clamp: %s, world query %s", contact ? "holding the eye short" : "clear",
-                  failed ? "NOT RUNNING" : "running");
+                  failed ? "NOT RUNNING, lean withheld" : "running");
         g_lastLeanContact = contact;
         g_lastLeanQueryFailed = failed;
+    }
+    if (nowMicros - g_lastLeanSampleMicros >= kLeanSampleMicros) {
+        g_lastLeanSampleMicros = nowMicros;
+        Log::Line("Lean clamp sample: lean %.3f m, allowed %.3f m, standoff %.3f m, %s, query %s",
+                  static_cast<double>(desired), static_cast<double>(allowed),
+                  static_cast<double>(radius), contact ? "in contact" : "clear",
+                  failed ? "not running" : "running");
     }
 }
 
@@ -283,10 +301,57 @@ EnginePose PoseFromSample(const FrameSample& sample) {
         sample.has_position ? sample.pos_y : 0.0f, sample.has_position ? sample.pos_z : 0.0f);
 }
 
+// How far the leaned eye is held off any surface: CollisionMargin, or the
+// distance from the eye to the corners of the near plane if that is further.
+// Geometry nearer the eye than the near plane is culled, and the corners are the
+// near plane's furthest reach, so a wall held closer than them is seen through
+// whatever the margin says. Zero when the frame gives no way to tell.
+float LeanRadius(engine::Camera* cam, const FrameTangents& t) {
+    const float nearClip = engine::CameraClipNear(cam);
+    if (!t.valid || !(nearClip > 0.0f) || !std::isfinite(nearClip)) {
+        if (!g_loggedNoRadius) {
+            g_loggedNoRadius = true;
+            Log::Line("WARN: lean collision: no near plane to size the standoff from (near %.3f, "
+                      "projection %s), so the lean is withheld on such frames (logged once)",
+                      static_cast<double>(nearClip), t.valid ? "readable" : "unreadable");
+        }
+        return 0.0f;
+    }
+    const float corner = nearClip * std::sqrt(1.0f + t.tan_half_h * t.tan_half_h +
+                                              t.tan_half_v * t.tan_half_v) * kNearPlaneSafety;
+    const float margin = g_cfg.lean_clamp.skin;
+    if (corner > margin && !g_loggedNearPlaneRadius) {
+        g_loggedNearPlaneRadius = true;
+        Log::Line("Lean collision: the near plane's corners reach %.3f m from the eye, past "
+                  "CollisionMargin %.3f m, so the eye is held %.3f m off surfaces",
+                  static_cast<double>(nearClip * std::sqrt(1.0f + t.tan_half_h * t.tan_half_h +
+                                                           t.tan_half_v * t.tan_half_v)),
+                  static_cast<double>(margin), static_cast<double>(corner));
+    }
+    return corner > margin ? corner : margin;
+}
+
 // The sweep starts at the clean eye - the position the game itself put the
 // camera at - so the clamp never reads back a position already inside a wall.
-Vec3f ClampLeanAgainstWorld(const ViewBasis& clean, const Vec3f& lean, std::uint64_t nowMicros,
-                            diagnostics::FrameTrace& trace) {
+//
+// A frame on which the world cannot be asked gets no lean at all: the clean eye
+// is where the game's own collision put the camera, and a lean nothing checked
+// is exactly how the view ends up inside a wall.
+Vec3f ClampLeanAgainstWorld(const ViewBasis& clean, const Vec3f& lean, float radius,
+                            std::uint64_t nowMicros, diagnostics::FrameTrace& trace) {
+    if (!(radius > 0.0f)) {
+        g_leanClamp.Reset();
+        trace.lean_query_failed = true;
+        return {};
+    }
+    if (radius != g_leanSweep.settings.radius) {
+        // LineSweepQuery hands back its travel plus the radius, and the clamp
+        // takes its skin back off, so the two are always the same number.
+        g_leanSweep.settings.radius = radius;
+        cameraunlock::camera::LeanClampSettings settings = g_leanClamp.Settings();
+        settings.skin = radius;
+        g_leanClamp.SetSettings(settings);
+    }
     const cameraunlock::math::Vec3 eye(clean.pos.x, clean.pos.y, clean.pos.z);
     const cameraunlock::math::Vec3 desired(lean.x, lean.y, lean.z);
     // Measured against the previous frame that applied a lean, not against the
@@ -296,10 +361,12 @@ Vec3f ClampLeanAgainstWorld(const ViewBasis& clean, const Vec3f& lean, std::uint
                                    : kNominalFrameDtSec;
     if (!(dt > 0.0f) || dt > kMaxLeanDtSec) dt = kNominalFrameDtSec;
     const cameraunlock::math::Vec3 allowed =
-        g_leanClamp.Apply(eye, desired, dt, &lean_trace::Query, &g_leanContext);
-    ReportLeanClampState();
+        g_leanClamp.Apply(eye, desired, dt, &cameraunlock::camera::LineSweepQuery, &g_leanSweep);
+    ReportLeanClampState(desired.Magnitude(), g_leanClamp.LastQueryFailed() ? 0.0f : allowed.Magnitude(),
+                         radius, nowMicros);
     trace.lean_contact = g_leanClamp.InContact();
     trace.lean_query_failed = g_leanClamp.LastQueryFailed();
+    if (g_leanClamp.LastQueryFailed()) return {};
     return {allowed.x, allowed.y, allowed.z};
 }
 
@@ -389,7 +456,9 @@ void Detour(engine::Camera* thiz, const engine::Vec3* forward, const engine::Vec
     ViewBasis rendered = ApplyHeadRotation(clean, pose, g_tracking->IsWorldSpaceYaw());
 
     Vec3f lean = LeanWorldOffset(clean, pose);
-    if (g_cfg.collision_enabled) lean = ClampLeanAgainstWorld(clean, lean, now, trace);
+    if (g_cfg.collision_enabled) {
+        lean = ClampLeanAgainstWorld(clean, lean, LeanRadius(thiz, tangents), now, trace);
+    }
     rendered.pos = Add(clean.pos, lean);
 
     trace.pose = pose;
@@ -419,7 +488,8 @@ void Detour(engine::Camera* thiz, const engine::Vec3* forward, const engine::Vec
 bool InstallCameraHook(TrackingRuntime& tracking, const Config& cfg) {
     g_tracking = &tracking;
     g_cfg = cfg;
-    g_leanContext.standoff = cfg.lean_clamp.skin;
+    g_leanSweep.cast = &lean_trace::Cast;
+    g_leanSweep.settings.radius = cfg.lean_clamp.skin;
     g_leanClamp.SetSettings(cfg.lean_clamp);
 
     g_target = engine::FromForwardUpPosTarget();
