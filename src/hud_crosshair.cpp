@@ -93,10 +93,13 @@ void UnpackNdc(std::uint64_t packed, float& x, float& y) {
 
 // --- Per-element state -------------------------------------------------------
 
-// The game runs one element's UI callbacks on more than one worker thread, so
-// everything below is touched only under g_elementsLock.
+// The game runs one element's UI callbacks on more than one worker thread. The
+// table lock covers finding an element's entry and nothing else. The engine calls
+// run under the entry's own lock, taken with a try: they run inside the game's UI
+// update, and a worker blocked on this mod while the holder waits on the engine
+// would hang the game. A callback that finds its entry busy skips the frame's
+// write, which the other callback makes anyway.
 struct Element {
-    void* ui = nullptr;
     bool failed = false;
     bool probed = false;
     float signX = 0.0f, signY = 0.0f;
@@ -106,28 +109,60 @@ struct Element {
     bool hiddenByUs = false;
 };
 
+struct Entry {
+    SRWLOCK lock = SRWLOCK_INIT;
+    Element state;  // under `lock`
+    void* ui = nullptr;        // under g_tableLock
+    ULONGLONG lastSeenMs = 0;  // under g_tableLock
+};
+
 constexpr int kMaxElements = 4;
-Element g_elements[kMaxElements];
+
+// The game calls a live element every frame. One it has not called for this long
+// went with the HUD it belonged to, and its entry is free for the next one, so a
+// session that rebuilds the HUD on every load does not run out of entries.
+constexpr ULONGLONG kRetiredElementMs = 1000;
+
+SRWLOCK g_tableLock = SRWLOCK_INIT;
+Entry g_entries[kMaxElements];
 bool g_loggedFull = false;
 
-Element* Lookup(void* ui) {
-    for (Element& e : g_elements) {
-        if (e.ui == ui) return &e;
+Entry* Lookup(void* ui) {
+    const ULONGLONG now = GetTickCount64();
+    Entry* found = nullptr;
+    bool added = false;
+    bool full = false;
+    AcquireSRWLockExclusive(&g_tableLock);
+    Entry* oldest = &g_entries[0];
+    for (Entry& en : g_entries) {
+        if (en.ui == ui) {
+            found = &en;
+            break;
+        }
+        if (en.lastSeenMs < oldest->lastSeenMs) oldest = &en;
     }
-    for (Element& e : g_elements) {
-        if (!e.ui) {
-            e = Element{};
-            e.ui = ui;
-            Log::Line("Game crosshair: HudCrosshair element %p found", ui);
-            return &e;
+    if (!found) {
+        const bool free = !oldest->ui || now - oldest->lastSeenMs > kRetiredElementMs;
+        if (free && TryAcquireSRWLockExclusive(&oldest->lock)) {
+            oldest->state = Element{};
+            oldest->ui = ui;
+            ReleaseSRWLockExclusive(&oldest->lock);
+            found = oldest;
+            added = true;
+        } else if (!free && !g_loggedFull) {
+            g_loggedFull = true;
+            full = true;
         }
     }
-    if (!g_loggedFull) {
-        g_loggedFull = true;
+    if (found) found->lastSeenMs = now;
+    ReleaseSRWLockExclusive(&g_tableLock);
+
+    if (added) Log::Line("Game crosshair: HudCrosshair element %p found", ui);
+    if (full) {
         Log::Line("ERROR: more than %d HudCrosshair elements are live; element %p is left where "
                   "the game put it", kMaxElements, ui);
     }
-    return nullptr;
+    return found;
 }
 
 engine::Vec3 RelativePos(void* ui) {
@@ -146,27 +181,27 @@ float Sign(float v) { return v > 0.0f ? 1.0f : (v < 0.0f ? -1.0f : 0.0f); }
 
 // Settles, per axis, whether a larger relative position moves the element right
 // and down in its parent or the other way, which depends on how it is anchored.
-bool Probe(Element& e, int width, int height) {
-    const engine::Vec3 r0 = RelativePos(e.ui);
-    const engine::Vec3 t0 = TopLeft(e.ui);
+bool Probe(void* ui, Element& e, int width, int height) {
+    const engine::Vec3 r0 = RelativePos(ui);
+    const engine::Vec3 t0 = TopLeft(ui);
     const engine::Vec3 nudged{r0.x + kProbeStep, r0.y + kProbeStep, r0.z};
-    g_ui.setRelativePos(e.ui, &nudged);
-    const engine::Vec3 t1 = TopLeft(e.ui);
-    g_ui.setRelativePos(e.ui, &r0);
+    g_ui.setRelativePos(ui, &nudged);
+    const engine::Vec3 t1 = TopLeft(ui);
+    g_ui.setRelativePos(ui, &r0);
 
     e.signX = Sign(t1.x - t0.x);
     e.signY = Sign(t1.y - t0.y);
 
     engine::Vec3 size;
-    g_ui.getSize(e.ui, &size);
-    void* parent = g_ui.getParent(e.ui);
+    g_ui.getSize(ui, &size);
+    void* parent = g_ui.getParent(ui);
     float parentCx = 0.0f, parentCy = 0.0f;
     if (parent) g_ui.screenToLocal(parent, width * 0.5f, height * 0.5f, &parentCx, &parentCy);
 
     Log::Line("Game crosshair %p: relative pos (%.1f %.1f), top-left (%.1f %.1f), size "
               "(%.1f %.1f), nudge moved top-left by (%.1f %.1f); screen %dx%d centre is (%.1f "
               "%.1f) in its parent %p",
-              e.ui, static_cast<double>(r0.x), static_cast<double>(r0.y),
+              ui, static_cast<double>(r0.x), static_cast<double>(r0.y),
               static_cast<double>(t0.x), static_cast<double>(t0.y),
               static_cast<double>(size.x), static_cast<double>(size.y),
               static_cast<double>(t1.x - t0.x), static_cast<double>(t1.y - t0.y), width, height,
@@ -174,33 +209,32 @@ bool Probe(Element& e, int width, int height) {
 
     if (e.signX == 0.0f || e.signY == 0.0f) {
         Log::Line("ERROR: game crosshair %p did not move when its relative position was "
-                  "nudged; it is left where the game put it", e.ui);
+                  "nudged; it is left where the game put it", ui);
         return false;
     }
     if (!parent) {
         Log::Line("ERROR: game crosshair %p has no parent element to measure the screen in; it "
-                  "is left where the game put it", e.ui);
+                  "is left where the game put it", ui);
         return false;
     }
     e.probed = true;
     return true;
 }
 
-void SetVisible(Element& e, bool hide) {
-    if (hide && !e.hiddenByUs && g_ui.isVisible(e.ui)) {
-        g_ui.setVisible(e.ui, false);
+void SetVisible(void* ui, Element& e, bool hide) {
+    if (hide && !e.hiddenByUs && g_ui.isVisible(ui)) {
+        g_ui.setVisible(ui, false);
         e.hiddenByUs = true;
     } else if (!hide && e.hiddenByUs) {
-        g_ui.setVisible(e.ui, true);
+        g_ui.setVisible(ui, true);
         e.hiddenByUs = false;
     }
 }
 
 // --- The per-frame write -----------------------------------------------------
 
-void ApplyLocked(void* ui) {
-    Element* e = Lookup(ui);
-    if (!e || e->failed) return;
+void ApplyLocked(void* ui, Element* e) {
+    if (e->failed) return;
 
     const engine::Vec3 cur = RelativePos(ui);
     if (!e->haveBase || std::fabs(cur.x - (e->base.x + e->appliedX)) > kPositionTolerance ||
@@ -217,7 +251,7 @@ void ApplyLocked(void* ui) {
     // Probed with the element at the game's own position, so the centre
     // reference is taken from where the game drew it.
     if (!e->probed && e->appliedX == 0.0f && e->appliedY == 0.0f) {
-        if (!Probe(*e, width, height)) {
+        if (!Probe(ui, *e, width, height)) {
             e->failed = true;
             return;
         }
@@ -225,7 +259,7 @@ void ApplyLocked(void* ui) {
     if (!e->probed) return;
 
     const int state = g_aimState.load(std::memory_order_acquire);
-    SetVisible(*e, state == kHidden);
+    SetVisible(ui, *e, state == kHidden);
 
     float offX = 0.0f, offY = 0.0f;
     if (state == kAim) {
@@ -251,13 +285,12 @@ void ApplyLocked(void* ui) {
     }
 }
 
-SRWLOCK g_elementsLock = SRWLOCK_INIT;
-
 void Apply(void* ui) {
     perf_probe::Scope perf(perf_probe::kCrosshair);
-    AcquireSRWLockExclusive(&g_elementsLock);
-    ApplyLocked(ui);
-    ReleaseSRWLockExclusive(&g_elementsLock);
+    Entry* en = Lookup(ui);
+    if (!en || !TryAcquireSRWLockExclusive(&en->lock)) return;
+    ApplyLocked(ui, &en->state);
+    ReleaseSRWLockExclusive(&en->lock);
 }
 
 // --- Vtable patching ---------------------------------------------------------

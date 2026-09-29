@@ -3,12 +3,12 @@
 #include "engine_api.h"
 #include "logging.h"
 
+#include <process.h>
 #include <windows.h>
 
 #include <atomic>
 #include <cmath>
 #include <mutex>
-#include <thread>
 
 namespace DyingLightHeadTracking::diagnostics {
 
@@ -16,12 +16,15 @@ namespace {
 
 constexpr int kTraceIntervalMs = 500;
 constexpr int kTriggerPollMs = 200;
+constexpr DWORD kThreadJoinMs = 2000;
 
 std::atomic<bool> g_verbose{false};
 std::atomic<bool> g_running{false};
 std::wstring g_triggerPath;
 HANDLE g_stopEvent = nullptr;
-std::thread g_thread;
+// A raw handle, not a std::thread: nothing joins it on the process-exit path, and the CRT
+// destroying a still-joinable std::thread there is std::terminate, which kills the game on quit.
+HANDLE g_thread = nullptr;
 
 std::mutex g_mutex;
 FrameTrace g_latest;
@@ -66,7 +69,7 @@ void TraceLine() {
     }
 }
 
-void Worker() {
+unsigned __stdcall Worker(void*) {
     int sinceTrace = 0;
     while (WaitForSingleObject(g_stopEvent, kTriggerPollMs) == WAIT_TIMEOUT) {
         sinceTrace += kTriggerPollMs;
@@ -92,6 +95,7 @@ void Worker() {
             }
         }
     }
+    return 0;
 }
 
 }  // namespace
@@ -108,20 +112,29 @@ void Start(bool verbose, const std::wstring& triggerPath) {
         g_verbose.store(false, std::memory_order_relaxed);
         return;
     }
+    g_thread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, &Worker, nullptr, 0, nullptr));
+    if (!g_thread) {
+        Log::Line("WARN: diagnostics could not start its thread; verbose tracing is off");
+        CloseHandle(g_stopEvent);
+        g_stopEvent = nullptr;
+        g_verbose.store(false, std::memory_order_relaxed);
+        return;
+    }
     g_running.store(true, std::memory_order_release);
-    g_thread = std::thread(&Worker);
     Log::Line("Verbose diagnostics on: a trace every %d ms, and a screenshot whenever %ls appears",
               kTraceIntervalMs, g_triggerPath.c_str());
 }
 
 void Stop() {
     if (!g_running.exchange(false, std::memory_order_acq_rel)) return;
-    if (g_stopEvent) SetEvent(g_stopEvent);
-    if (g_thread.joinable()) g_thread.join();
-    if (g_stopEvent) {
-        CloseHandle(g_stopEvent);
-        g_stopEvent = nullptr;
+    SetEvent(g_stopEvent);
+    if (WaitForSingleObject(g_thread, kThreadJoinMs) != WAIT_OBJECT_0) {
+        Log::Line("WARN: diagnostics: the trace thread did not exit within 2s");
     }
+    CloseHandle(g_thread);
+    g_thread = nullptr;
+    CloseHandle(g_stopEvent);
+    g_stopEvent = nullptr;
 }
 
 bool IsVerbose() { return g_verbose.load(std::memory_order_relaxed); }

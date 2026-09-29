@@ -14,7 +14,10 @@ namespace DyingLightHeadTracking::perf_probe {
 
 enum Site : int { kCamera, kRaytrace, kTorchDir, kTorchPos, kCrosshair, kSiteCount };
 
-struct Counter {
+// One cache line each: the raytrace and torch sites run on many game threads at
+// once, and counters sharing a line would make those threads contend with each
+// other on every call to count them.
+struct alignas(64) Counter {
     std::atomic<std::uint64_t> calls{0};
     std::atomic<std::uint64_t> ticks{0};
 };
