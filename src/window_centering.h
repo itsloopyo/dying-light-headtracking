@@ -4,10 +4,11 @@
 
 namespace DyingLightHeadTracking::window_centering {
 
-// Starts a thread that waits for the game window to settle and, if the engine
-// left a windowed-mode window at its default placement in the monitor's top-left
-// corner, centres it on that monitor's work area. Fullscreen, borderless, and a
-// window the player or a WindowOffset setting put somewhere else are left alone.
+// Starts a thread that watches the game window for the whole session and centres
+// it whenever the engine has placed a windowed-mode window: when it opens at the
+// monitor origin, when it leaves fullscreen, and when the game resizes it in
+// place. Fullscreen and borderless are left alone, and so is a window the player
+// moved or a WindowOffset setting put somewhere else.
 void Start(HANDLE shutdownEvent);
 
 // Joins that thread. Call after shutdownEvent is set.
