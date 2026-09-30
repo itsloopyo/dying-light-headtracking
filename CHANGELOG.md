@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2026-09-30
+
+### Fixed
+
+- a windowed game is centred on screen whenever the game places it, not only at the first launch
+
 ## [0.2.0] - 2026-09-30
 
 ### Added
